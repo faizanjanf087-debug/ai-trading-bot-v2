@@ -28,13 +28,17 @@ ALIASES = {
     "xauusdt": "XAUUSD", "goldusd": "XAUUSD", "xausd": "XAUUSD", "xaus": "XAUUSD",
 }
 
-# tf: entry timeframe. htf_factor: entry candles ko jod kar higher timeframe banta hai
-# (alag fetch nahi hota, is liye Twelve Data ka credit bachta hai).
+# tf: entry timeframe. htf_factor / htf2_factor: entry candles ko jod kar do higher timeframes banti hain
+# (alag fetch nahi hota, is liye Twelve Data ka credit bachta hai; credit request par lagta hai, candles ki
+# ginti par nahi, is liye zyada candles lene ka koi extra kharcha nahi).
+#   scalp:    5m entry -> 15m (x3) -> 1h (x12)
+#   intraday: 15m entry -> 1h (x4) -> 4h (x16)
+# core_bars: S/R levels sirf itni aakhri candles se (purane levels bekaar na hon). Kraken ek baar mein max 720 deta hai.
 MODES = {
-    "scalp": dict(tf="5m", tf_seconds=300, htf_factor=3, pending_bars=24,
-                  td_interval="5min", kraken_interval=5, outputsize=250),
-    "intraday": dict(tf="15m", tf_seconds=900, htf_factor=4, pending_bars=24,
-                     td_interval="15min", kraken_interval=15, outputsize=300),
+    "scalp": dict(tf="5m", tf_seconds=300, htf_factor=3, htf2_factor=12, pending_bars=24,
+                  td_interval="5min", kraken_interval=5, outputsize=700, core_bars=250),
+    "intraday": dict(tf="15m", tf_seconds=900, htf_factor=4, htf2_factor=16, pending_bars=24,
+                     td_interval="15min", kraken_interval=15, outputsize=720, core_bars=300),
 }
 
 

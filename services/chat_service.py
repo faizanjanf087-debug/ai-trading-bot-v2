@@ -14,12 +14,14 @@ log = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, ai_client, memory, analysis_service, news, signal_repo):
+    def __init__(self, ai_client, memory, analysis_service, news, signal_repo, calendar=None, discipline=None):
         self.ai = ai_client
         self.memory = memory
         self.analysis = analysis_service
         self.news = news
         self.signal_repo = signal_repo
+        self.calendar = calendar
+        self.discipline = discipline
 
     def _user_context(self, user_id: int) -> str:
         open_sigs = self.signal_repo.open_for_user(user_id)
@@ -33,6 +35,11 @@ class ChatService:
         if closed:
             parts.append("User ke aakhri band signals (asli status):\n" + "\n".join(formatter.format_signal_line(s) for s in closed))
         parts.append(f"User ke band signals: {st['closed']} (wins {st['wins']}, losses {st['losses']}, net {st['net_r']}R)")
+        if self.discipline is not None:
+            try:
+                parts.append(self.discipline.context_text(user_id))
+            except Exception:
+                log.warning("Discipline context fail", exc_info=True)
         return "\n".join(parts)
 
     def _market_context(self, text: str) -> str:
@@ -53,13 +60,18 @@ class ChatService:
             news = self.news.context(kind) if self.news else ""
             if news:
                 out.append(news)
+            cal = self.calendar.context(sym) if self.calendar else ""
+            if cal:
+                out.append(cal)
         return "\n\n".join(out)
 
-    def reply_blocking(self, user_id: int, text: str, hint: str = "") -> str:
+    def reply_blocking(self, user_id: int, text: str, hint: str = "", extra: str = "") -> str:
         if not self.ai.enabled:
             return "AI abhi band hai (DEEPSEEK_API_KEY set nahi). Commands use karein: /help"
         context = self._user_context(user_id)
         market = self._market_context(text)
+        if extra:
+            market = (market + "\n\n" if market else "") + extra
         messages = [{"role": "system", "content": prompts.SYSTEM_PROMPT},
                     {"role": "system", "content": "Context:\n" + context + ("\n\n" + market if market else "")}]
         if hint:
@@ -78,5 +90,5 @@ class ChatService:
             log.warning("Summary fail", exc_info=True)
         return reply
 
-    async def reply(self, user_id: int, text: str, hint: str = "") -> str:
-        return await asyncio.to_thread(self.reply_blocking, user_id, text, hint)
+    async def reply(self, user_id: int, text: str, hint: str = "", extra: str = "") -> str:
+        return await asyncio.to_thread(self.reply_blocking, user_id, text, hint, extra)

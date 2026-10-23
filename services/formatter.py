@@ -109,6 +109,9 @@ def format_alert_hit(a: dict, price: float) -> str:
     return f"🔔 Alert #{a['id']}: {a['symbol']} ne {px(a['symbol'], a['price'])} {'upar cross kiya' if a['direction'] == 'above' else 'neeche cross kiya'} (price ~{px(a['symbol'], price)})"
 
 
+MTF_TEXT = {"aligned_up": "teeno up", "aligned_down": "teeno down", "mixed": "mila-jula"}
+
+
 def format_analysis(a: dict, setup=None) -> str:
     sym = a["symbol"]
     lines = [
@@ -116,6 +119,18 @@ def format_analysis(a: dict, setup=None) -> str:
         f"Trend: {a['tf']} {'up' if a['ema_fast'] > a['ema_slow'] else 'down'} | Higher TF: {a['htf_trend']}",
         f"RSI: {a['rsi']:.0f} | MACD hist: {a['macd_hist']:+.5g} | ATR: {px(sym, a['atr'])}",
     ]
+    if a.get("htf2_tf"):
+        lines.append(f"Multi-TF: {a['tf']} {a.get('ltf_trend', '-')} | {a['htf_tf']} {a['htf_trend']} | "
+                     f"{a['htf2_tf']} {a.get('htf2_trend', '-')} ({MTF_TEXT.get(a.get('mtf_alignment'), 'mixed')})")
+    extra = []
+    if a.get("adx") is not None:
+        extra.append(f"ADX {a['adx']:.0f}" + (" (range)" if a.get("ranging") else " (mazboot trend)" if a["adx"] >= 25 else ""))
+    if a.get("structure"):
+        extra.append("Structure " + ("HH/HL" if a["structure"] == "bullish" else "LH/LL"))
+    if a.get("bb_squeeze"):
+        extra.append("Bollinger squeeze (breakout ka imkaan)")
+    if extra:
+        lines.append(" | ".join(extra))
     sup = [l for l in a["levels"] if l["price"] < a["price"]][-2:]
     res = [l for l in a["levels"] if l["price"] > a["price"]][:2]
     if sup:
@@ -204,3 +219,40 @@ def format_my_signals(signals: list, events_by_id: dict) -> str:
     if any(s["status"] in ("PENDING", "ACTIVE", "TP1") and SYMBOLS.get(s["symbol"], {}).get("kind") == "forex" for s in signals):
         out.append("\nNote: forex ke alerts free plan par 5-14 minute late aa sakte hain.")
     return "\n".join(out)
+
+
+def _eta(seconds: float) -> str:
+    if seconds < -60:
+        return f"{int(-seconds // 60)} min pehle"
+    if seconds < 60:
+        return "abhi"
+    h, m = divmod(int(seconds // 60), 60)
+    return f"{h}h {m}m mein" if h else f"{m} min mein"
+
+
+def format_calendar_events(events: list, now: float) -> str:
+    """Bari khabrein, UTC mein. Khali list par saaf jawab."""
+    from datetime import datetime, timezone
+
+    if not events:
+        return "Agle waqt mein koi bari (high-impact) khabar nahi mili."
+    lines = []
+    for e in events:
+        when = datetime.fromtimestamp(e["ts"], timezone.utc)
+        extra = ""
+        if e.get("forecast") or e.get("previous"):
+            extra = f" (forecast {e.get('forecast') or '-'}, pehle {e.get('previous') or '-'})"
+        lines.append(f"🔴 {when:%a %d %b %H:%M} UTC | {e['currency']} | {e['title']}{extra} - {_eta(e['ts'] - now)}")
+    return "\n".join(lines)
+
+
+def format_news(events: list, headlines: list, sentiment, fear_greed, now: float, title: str = "News") -> str:
+    parts = [f"📰 {title}", "", "Bari khabrein (agle 48 ghante):", format_calendar_events(events, now)]
+    if headlines:
+        parts += ["", "Headlines:"] + [f"- {h}" for h in headlines[:5]]
+        if sentiment:
+            parts.append(f"Headlines ka mood (lafzon se mota andaza): {sentiment[0]}")
+    if fear_greed:
+        parts.append(f"Crypto Fear & Greed: {fear_greed[0]} ({fear_greed[1]})")
+    parts.append("\nBari khabar ke waqt spread aur slippage barh jate hain; us waqt naya trade na lena behtar hai.")
+    return "\n".join(parts)

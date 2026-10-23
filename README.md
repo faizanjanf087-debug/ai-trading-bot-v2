@@ -125,3 +125,66 @@ Har text message pehle pehchana jata hai ke user kya chahta hai:
 
 Faisla lafzon (keywords) par hota hai, sirf Roman Urdu/English mein. Koi message galat jagah jaye to uski misal
 `tests/test_intents.py` mein daal kar rule theek kar sakte hain.
+
+## V2.1 (multi-timeframe aur zyada technical analysis)
+
+- **Teen timeframes:** entry TF + do higher TF, sab entry candles se bante hain (koi extra fetch ya credit nahi).
+  Scalp: 5m -> 15m -> 1h. Intraday: 15m -> 1h -> 4h. Ab zyada candles li jati hain (scalp 700, intraday 720; Kraken ki
+  hadd 720 hai), kyunke Twelve Data credit request par lagta hai, candles ki ginti par nahi.
+- **Top timeframe trend:** 1h/4h ka trend (EMA9/EMA21, kam az kam 30 candles) score mein +1 deta hai. Teeno TF ek taraf
+  hon to "Multi-timeframe aligned" ka +0.5. Data kam ho to top TF "flat" rehta hai.
+- **ADX (trend ki taaqat):** 25 se upar mazboot trend (+0.5, +DI/-DI ki taraf). 15 se neeche market "range" maani jati hai
+  aur signal ke liye `MIN_SCORE` se 0.5 zyada score chahiye (`RANGING_EXTRA`, `analysis/signal_engine.py`).
+- **Market structure:** aakhri do swing highs/lows se HH/HL (bullish) ya LH/LL (bearish), +1.
+- **Bollinger Bands:** band ke kinare par RSI ki tasdeeq ke saath +0.5. Squeeze (band tang) sirf `/analyze` mein dikhta hai.
+- `/analyze` mein ab "Multi-TF", ADX, Structure aur squeeze ki line aati hai, aur AI ko bhi yeh fields milte hain.
+- Naye factors (jaise `top_timeframe_trend_up`, `market_structure_bullish`) khud-ba-khud `/report` ke factor win-rate
+  mein ginay jayenge; database mein koi change nahi.
+
+**Zaroori:** yeh sab naye rules abhi backtest/live data par parkhe nahi gaye. Thresholds (15, 25, 0.5) shuruaati andaze hain;
+pehle `python -m backtest.runner XAUUSD scalp` aur `/report` se dekhein ke inse nateeje behtar hue ya nahi.
+Higher timeframe candles clock ke hisaab se nahi, entry ki aakhri N candles jor kar bante hain (purana tareeqa).
+
+## V2.2 (fundamental: khabrein)
+
+- **Economic calendar** (`data/calendar.py`): bari (high-impact) khabrein, currency ke hisaab se (XAUUSD/BTC -> USD,
+  EURUSD -> EUR+USD...). Source ek free weekly JSON feed hai; `CALENDAR_URL` se badal sakte hain. Cache 1 ghanta; source
+  band ho to purana data chalta hai aur bot nahi rukta.
+- **News blackout:** bari khabar se `NEWS_BLACKOUT_BEFORE_MIN` (30) pehle aur `NEWS_BLACKOUT_AFTER_MIN` (15) baad tak
+  **scanner auto signal nahi banata** (credit bhi bachta hai). Aap khud `/signal` maangein to signal milta hai, saath mein
+  khabar ki tanbeeh.
+- **`/news [pair]`** (ya "news batao", "btc news", "nfp kab hai"): agle 48 ghante ki bari khabrein, headlines, headlines
+  ka mota mood (lafzon se, sirf ishara) aur crypto ke liye Fear & Greed. Koi AI nahi, sab data source se.
+- **Owner `/event add 2026-10-29 18:00 USD FOMC rate decision`** (waqt UTC), `/event list`, `/event clear`: agar free feed
+  na chale ya koi khabar usme na ho, to khud daal dein. Yeh bhi blackout mein ginti hai.
+- AI ko chat/analysis/signal review mein upcoming khabrein aur headline mood bhi milte hain.
+
+## V2.3 (psychology aur discipline)
+
+`services/discipline.py` aap ke **apne signals ke record** se (database, AI ka andaza nahi) dekhta hai:
+- lagatar loss (`LOSS_STREAK_WARN`, default 3), pichle 24 ghante ka R (`DAILY_LOSS_LIMIT_R`, default 3),
+  pichle 24 ghante ke signals (`MAX_SIGNALS_PER_DAY`, default 6), aur loss ke 30 minute ke andar naya signal (revenge-trade).
+- `/signal` se pehle yeh tanbeehein aati hain; **bot signal rokta nahi**, faisla aap ka hai.
+- `/discipline` (ya "mera discipline kaisa hai") poori halat dikhata hai.
+- Jazbati baat par AI ko aap ki asli halat (streak, 24h ka R) milti hai, taake tasalli hisaab ke saath ho.
+- Aap ke khud ke signals se ginta hai; aap broker par jo trade lete hain, bot unhein nahi dekhta.
+
+## V2.4 (sticker, voice, image)
+
+- **Sticker:** Telegram har sticker ke saath uska emoji bhejta hai; bot usi se mood samajhta hai (koi AI ya download nahi).
+  Udaas/ghussa: narmi + risk ki yaad-dehani. Khush/jashn: chhota jawab + overconfidence se ehtiyat. Na-maloom sticker par khamoshi.
+- **Voice:** voice note -> text (`STT_API_KEY`, default Groq Whisper, koi bhi OpenAI-compatible service chalti hai) -> wahi
+  intent router. Bot pehle likh kar dikhata hai ke usne kya suna. `VOICE_MAX_SECONDS` (60) se lambi voice nahi leta.
+  Urdu likhai mein aaya text keywords se nahi pehchana jata (router Roman Urdu/English ke liye hai), wo seedha AI chat ko jata hai.
+- **Image:** chart ka screenshot (photo ya file) -> Claude vision (`ANTHROPIC_API_KEY`, `VISION_MODEL`, default Haiku) ->
+  observations AI chat ko extra hint ki tarah milte hain. Tasveer se parhe levels andaze hain aur galat ho sakte hain;
+  bot ke apne indicators zyada bharosemand hain.
+- **Kharcha/hifazat:** `MEDIA_DAILY_LIMIT` (20) har user ki roz ki voice+image hadd (memory mein, restart par reset).
+  Awaaz aur tasveer sirf parhne ke liye teesri party service par jati hai; bot unhein save nahi karta, sirf text yaad rakhta hai.
+  Pehli baar user ko yeh bata diya jata hai. Key khali ho to wo feature band rehta hai aur user ko saaf bata diya jata hai.
+
+### Abhi tak parkha nahi gaya
+Calendar feed ka URL aur Groq/Anthropic ke endpoints yahan se (bina internet) chala kar dekhe nahi ja sake; unka format
+mere tests mein nakli jawab se check hua hai. Telegram handlers nakli `telegram` module ke saath test hue hain, asli
+`python-telegram-bot` ke saath nahi. Pehli baar Replit par har cheez ek ek karke try karein: `/news`, `/discipline`,
+ek sticker, ek voice note, ek chart screenshot.

@@ -39,6 +39,27 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
+def adx(df: pd.DataFrame, n: int = 14):
+    """Wilder ADX, +DI, -DI. ADX trend ki taaqat batata hai (direction nahi): <15 range, >25 mazboot trend."""
+    up = df["high"].diff()
+    down = -df["low"].diff()
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=df.index)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=df.index)
+    atr_s = atr(df, n).replace(0, np.nan)
+    plus_di = 100 * plus_dm.ewm(alpha=1 / n, adjust=False).mean() / atr_s
+    minus_di = 100 * minus_dm.ewm(alpha=1 / n, adjust=False).mean() / atr_s
+    total = (plus_di + minus_di).replace(0, np.nan)
+    dx = (100 * (plus_di - minus_di).abs() / total).fillna(0.0)   # koi harkat nahi -> ADX 0 (range)
+    return dx.ewm(alpha=1 / n, adjust=False).mean(), plus_di, minus_di
+
+
+def bollinger(close: pd.Series, n: int = 20, k: float = 2.0):
+    """Bollinger Bands: (middle, upper, lower)."""
+    mid = close.rolling(n).mean()
+    sd = close.rolling(n).std(ddof=0)
+    return mid, mid + k * sd, mid - k * sd
+
+
 def volume_spike(df: pd.DataFrame, n: int = 20, factor: float = 1.8) -> Optional[bool]:
     """Aakhri candle ka volume average se kitna zyada hai. Forex mein volume na ho to None."""
     vol = df["volume"]

@@ -5,7 +5,7 @@ import pandas as pd
 
 from analysis import indicators as ind
 from analysis.divergence import rsi_divergence
-from analysis.levels import fibonacci, nearest_level, pivots, support_resistance
+from analysis.levels import fibonacci, market_structure, nearest_level, pivots, support_resistance
 from analysis.patterns import candlestick, chart_patterns
 from analysis.signal_engine import analyze, build_setup
 from tests.helpers import synth
@@ -191,6 +191,78 @@ class EngineTests(unittest.TestCase):
     def test_rejected_when_opposing_level_blocks_tp(self):
         a = self._a(ema_fast=99.95, levels=[{"price": 100.5, "touches": 4, "kind": "resistance"}])
         self.assertIsNone(build_setup(a))
+
+
+class MultiTimeframeTests(unittest.TestCase):
+    def test_adx_strong_trend_vs_flat(self):
+        up = synth(200, drift=0.4, vol=0.1)
+        adx_s, plus_di, minus_di = ind.adx(up)
+        self.assertGreater(adx_s.iloc[-1], 25)
+        self.assertGreater(plus_di.iloc[-1], minus_di.iloc[-1])
+        flat = df_from([[100 + (i % 2) * 0.1, 100.3, 99.8, 100.05 - (i % 2) * 0.1] for i in range(120)])
+        self.assertLess(ind.adx(flat)[0].iloc[-1], 15)
+
+    def test_bollinger_contains_price_and_widens_with_volatility(self):
+        close = pd.Series(np.r_[np.full(30, 100.0), np.linspace(100, 110, 30)])
+        mid, up, lo = ind.bollinger(close)
+        self.assertTrue((up.dropna() >= lo.dropna()).all())
+        self.assertGreater(up.iloc[-1] - lo.iloc[-1], up.iloc[25] - lo.iloc[25])
+
+    def test_market_structure(self):
+        def wave(levels):
+            rows = []
+            for lo, hi in levels:
+                for p in list(np.linspace(lo, hi, 8)) + list(np.linspace(hi, lo, 8)):
+                    rows.append([p, p + 0.1, p - 0.1, p])
+            return df_from(rows)
+        self.assertEqual(market_structure(wave([(100, 105), (102, 108), (104, 111), (106, 114)])), "bullish")
+        self.assertEqual(market_structure(wave([(106, 114), (104, 111), (102, 108), (100, 105)])), "bearish")
+        self.assertIsNone(market_structure(df_from([[1, 2, 0, 1]] * 10)))
+
+    def test_analyze_reports_three_timeframes(self):
+        a = analyze(synth(700, drift=0.05), "BTCUSD", "scalp")
+        self.assertEqual((a["htf_tf"], a["htf2_tf"]), ("15m", "1h"))
+        a = analyze(synth(720, freq="15min", drift=0.05), "BTCUSD", "intraday")
+        self.assertEqual((a["htf_tf"], a["htf2_tf"]), ("1h", "4h"))
+        self.assertIn(a["mtf_alignment"], ("aligned_up", "aligned_down", "mixed"))
+        # kam data par bhi chalta hai, top timeframe flat rehta hai
+        self.assertEqual(analyze(synth(250), "BTCUSD", "scalp")["htf2_trend"], "flat")
+
+    def test_aligned_timeframes_add_score_and_reasons(self):
+        from analysis.signal_engine import _mtf_alignment, _score
+        self.assertEqual(_mtf_alignment("up", "up", "up"), "aligned_up")
+        self.assertEqual(_mtf_alignment("up", "up", "down"), "mixed")
+        self.assertEqual(_mtf_alignment("flat", "flat", "flat"), "mixed")
+        base = dict(symbol="X", mode="scalp", tf="5m", price=100.0, atr=1.0, ema_fast=100.0, ema_slow=100.0,
+                    htf_trend="flat", rsi=50, macd_hist=0.0, macd_hist_prev=0.0, macd_cross=None, levels=[],
+                    fib=None, candles=[], chart_patterns=[], divergence=None, volume_spike=None)
+        a = dict(base, htf2_trend="up", mtf_alignment="aligned_up", structure="bullish")
+        _score(a)
+        self.assertEqual(a["score_buy"], 2.5)
+        self.assertIn("Multi-timeframe aligned up", a["reasons_buy"])
+        self.assertEqual(a["score_sell"], 0)
+
+    def test_ranging_market_needs_extra_score(self):
+        weak = EngineTests()._a(score_buy=6.2, ranging=True)
+        self.assertIsNone(build_setup(weak, min_score=6.0))
+        strong = EngineTests()._a(score_buy=6.6, ranging=True, ema_fast=99.95)
+        self.assertIsNotNone(build_setup(strong, min_score=6.0))
+        self.assertIsNotNone(build_setup(EngineTests()._a(score_buy=6.2, ema_fast=99.95), min_score=6.0))
+
+    def test_format_and_prompt_include_new_fields(self):
+        from ai.prompts import _compact
+        from services.formatter import format_analysis
+        a = analyze(synth(700, drift=0.05), "BTCUSD", "scalp")
+        text = format_analysis(a)
+        self.assertIn("Multi-TF:", text)
+        self.assertIn("ADX", text)
+        c = _compact(a)
+        self.assertIn("trend_by_timeframe", c)
+        self.assertIn("multi_timeframe", c)
+        # purana analysis dict (naye fields ke baghair) bhi nahi toot'ta
+        old = {k: v for k, v in a.items() if k not in ("htf2_tf", "htf2_trend", "mtf_alignment", "adx", "structure")}
+        self.assertNotIn("Multi-TF:", format_analysis(old))
+        _compact(old)
 
 
 if __name__ == "__main__":

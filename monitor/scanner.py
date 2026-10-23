@@ -38,7 +38,7 @@ def parse_ai_review(text: str) -> Optional[dict]:
 
 class Scanner:
     def __init__(self, settings, analysis, signal_service, users, ai, news, notify: Notify,
-                 watchlist, clock=time.time):
+                 watchlist, clock=time.time, calendar=None):
         self.s = settings
         self.analysis = analysis
         self.signals = signal_service
@@ -48,6 +48,7 @@ class Scanner:
         self.notify = notify
         self.watchlist = watchlist
         self.clock = clock
+        self.calendar = calendar
         self._last_scan: Dict[Tuple[str, str], float] = {}
 
     def _modes(self, symbol: str):
@@ -63,6 +64,8 @@ class Scanner:
         kind = SYMBOLS[analysis["symbol"]]["kind"]
         try:
             news = self.news.context(kind) if self.news else ""
+            cal = self.calendar.context(analysis["symbol"]) if self.calendar else ""
+            news = "\n\n".join(x for x in (news, cal) if x)
             return parse_ai_review(self.ai.chat(prompts.signal_review_prompt(analysis, setup, news),
                                                 temperature=0.2, max_tokens=300))
         except AIError as e:
@@ -84,6 +87,11 @@ class Scanner:
                 if not self._due(symbol, mode, now):
                     continue
                 self._last_scan[(symbol, mode)] = now
+                if self.calendar is not None:        # bari khabar ke aas-paas auto signal nahi (credit bhi bachta hai)
+                    ev = self.calendar.blackout(symbol, now, self.s.news_blackout_before_min, self.s.news_blackout_after_min)
+                    if ev:
+                        log.info("%s: news blackout (%s %s), scan chhod diya", symbol, ev["currency"], ev["title"])
+                        continue
                 try:
                     a, setup = await asyncio.to_thread(self.analysis.run_fresh, symbol, mode, "normal")
                 except BudgetExhausted:

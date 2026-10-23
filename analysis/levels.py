@@ -75,3 +75,16 @@ def fibonacci(df: pd.DataFrame, n: int = 3, lookback: int = 120):
     sign = -1 if direction == "up" else 1  # up-move ka retracement neeche aata hai
     levels = {r: end + sign * rng * r for r in (0.382, 0.5, 0.618, 0.786)}
     return {"direction": direction, "start": start, "end": end, "levels": levels}
+
+
+def market_structure(df: pd.DataFrame, n: int = 3, lookback: int = 150):
+    """Aakhri do swing highs/lows se structure: HH+HL = 'bullish', LH+LL = 'bearish', warna None."""
+    highs, lows = pivots(df.iloc[-lookback:], n)
+    if len(highs) < 2 or len(lows) < 2:
+        return None
+    hh, hl = highs[-1][1] > highs[-2][1], lows[-1][1] > lows[-2][1]
+    if hh and hl:
+        return "bullish"
+    if not hh and not hl:
+        return "bearish"
+    return None

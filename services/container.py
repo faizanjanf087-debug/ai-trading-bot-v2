@@ -24,3 +24,8 @@ class Container:
     notifier: Any
     db: Any
     journal: Any = None
+    calendar: Any = None
+    discipline: Any = None
+    media: Any = None
+    speech: Any = None
+    vision: Any = None

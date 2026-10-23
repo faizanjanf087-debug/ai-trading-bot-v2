@@ -32,6 +32,15 @@ EMOTION_PHRASES = ("loss pe loss", "sab loss", "bohat loss", "bahut loss", "laga
                    "paise doob", "blow up", "account blow", "margin call", "sab khatam")
 EMOTION_EMOJIS = "😭😢😡🤬😤😞😔😩😫💔"
 
+NEWS_WORDS = {"news", "khabar", "khabrein", "khabren", "calendar", "nfp", "fomc", "cpi", "events", "fundamental"}
+DISCIPLINE_WORDS = {"discipline", "overtrade", "overtrading", "overtrades", "streak"}
+HAPPY_EMOJIS = "😀😁😂🤣😄😊🥳🎉👍👏💪🔥😎🤑💰🚀🙌❤"
+
+HAPPY_HINT = (
+    "User khush ya jashn mana raha hai (shayad profit ya achhe trade par). Chhota dostana jawab do. Ek line mein yaad "
+    "dilao ke ek trade se nateeja pakka nahi hota, overconfidence ya risk barhane se bachein. Naya signal lene par zor mat do."
+)
+
 HELP_WORDS = {"help", "madad", "guide", "commands", "command"}
 PENDING_WORDS = ("aya", "aaya", "new", "naya", "pending", "request")
 
@@ -44,7 +53,7 @@ EMOTION_HINT = (
 
 @dataclass(frozen=True)
 class Intent:
-    kind: str                     # pending | stats | status | signal | emotion | help | chat
+    kind: str                     # pending | stats | status | signal | news | discipline | emotion | help | chat
     symbols: Tuple[str, ...] = ()
     mode: str = "scalp"
     hint: str = ""                # AI ko extra hidayat (sirf chat/emotion ke liye)
@@ -82,6 +91,8 @@ def route(text: str, is_owner: bool = False) -> Intent:
         return Intent("pending")
     if _is_stats(low, words, symbols):
         return Intent("stats")
+    if words & DISCIPLINE_WORDS and len(words) <= 8:
+        return Intent("discipline")
     if _strong_emotion(low, words):
         return Intent("emotion", symbols, mode, EMOTION_HINT)
     if any(k in low for k in ("signal", "sigal", "singal")):
@@ -90,6 +101,8 @@ def route(text: str, is_owner: bool = False) -> Intent:
         return Intent("signal", symbols, mode)
     if words & {"tp", "tp1", "tp2", "sl", "hit"}:
         return Intent("status")
+    if words & NEWS_WORDS and len(words) <= 6:       # chhota sawal: calendar + headlines; lamba sawal AI ko jata hai
+        return Intent("news", symbols, mode)
     if any(e in raw for e in EMOTION_EMOJIS):        # sirf emoji: baqi koi matlab na nikle tab
         return Intent("emotion", symbols, mode, EMOTION_HINT)
     if _is_help(low, words):
@@ -100,3 +113,15 @@ def route(text: str, is_owner: bool = False) -> Intent:
 def classify(text: str) -> str:
     """Sirf kisam (owner ke khaas 'pending' sawal ke baghair)."""
     return route(text).kind
+
+
+def route_sticker(emoji: str):
+    """Sticker ke emoji se mood. Pehchan na ho to None (bot khamosh rahe ya halka jawab de).
+
+    Telegram har sticker ke saath uska emoji bhejta hai, is liye is ke liye koi AI nahi chahiye."""
+    e = emoji or ""
+    if any(c in e for c in EMOTION_EMOJIS):
+        return Intent("emotion", (), "scalp", EMOTION_HINT)
+    if any(c in e for c in HAPPY_EMOJIS):
+        return Intent("chat", (), "scalp", HAPPY_HINT)
+    return None

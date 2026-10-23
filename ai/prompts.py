@@ -17,6 +17,11 @@ def _compact(analysis: dict) -> dict:
     return {
         "symbol": a["symbol"], "timeframe": a["tf"], "price": a["price"], "atr": a["atr"],
         "ema20_above_ema50": a["ema_fast"] > a["ema_slow"], "higher_tf_trend": a["htf_trend"],
+        "trend_by_timeframe": {a["tf"]: a.get("ltf_trend"), a.get("htf_tf") or "htf": a["htf_trend"],
+                               a.get("htf2_tf") or "htf2": a.get("htf2_trend")},
+        "multi_timeframe": a.get("mtf_alignment"), "adx": None if a.get("adx") is None else round(a["adx"], 1),
+        "ranging_market": a.get("ranging"), "market_structure": a.get("structure"),
+        "bollinger_squeeze": a.get("bb_squeeze"),
         "rsi": round(a["rsi"], 1), "macd_hist": a["macd_hist"], "macd_cross": a["macd_cross"],
         "rsi_divergence": a["divergence"], "volume_spike": a["volume_spike"],
         "patterns": [n for n, _ in a["candles"] + a["chart_patterns"]],

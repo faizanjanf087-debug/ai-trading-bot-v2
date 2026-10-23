@@ -35,6 +35,23 @@ class Settings:
     signal_cooldown_minutes: int = 60   # same symbol par naya signal itni der baad
     # AI
     ai_veto: bool = False               # True: AI "skip" kahe to signal na bheja jaye
+    # V2.2 news / calendar
+    enable_calendar: bool = True
+    calendar_url: str = ""              # khali = default free weekly feed (data/calendar.py)
+    news_blackout_before_min: int = 30  # bari khabar se itni der pehle auto signal band
+    news_blackout_after_min: int = 15
+    # V2.3 discipline (sirf yaad-dehani, signal rokta nahi)
+    loss_streak_warn: int = 3
+    daily_loss_limit_r: float = 3.0
+    max_signals_per_day: int = 6
+    # V2.4 voice / image (khali key = wo feature band)
+    stt_api_key: str = ""               # speech-to-text (Groq ya OpenAI-compatible)
+    stt_base_url: str = ""
+    stt_model: str = ""
+    voice_max_seconds: int = 60
+    anthropic_api_key: str = ""         # chart image parhne ke liye (Claude vision)
+    vision_model: str = ""
+    media_daily_limit: int = 20         # har user ki roz ki voice+image hadd
     # Twelve Data free plan
     td_per_minute: int = 8
     td_per_day: int = 800
@@ -99,6 +116,20 @@ def load_settings(env=None) -> Settings:
         counter_trend_extra=num("COUNTER_TREND_EXTRA", 1.0, float),
         signal_cooldown_minutes=num("SIGNAL_COOLDOWN_MINUTES", 60),
         ai_veto=_bool(env.get("AI_VETO"), False),
+        enable_calendar=_bool(env.get("ENABLE_CALENDAR"), True),
+        calendar_url=env.get("CALENDAR_URL", "").strip(),
+        news_blackout_before_min=num("NEWS_BLACKOUT_BEFORE_MIN", 30),
+        news_blackout_after_min=num("NEWS_BLACKOUT_AFTER_MIN", 15),
+        loss_streak_warn=num("LOSS_STREAK_WARN", 3),
+        daily_loss_limit_r=num("DAILY_LOSS_LIMIT_R", 3.0, float),
+        max_signals_per_day=num("MAX_SIGNALS_PER_DAY", 6),
+        stt_api_key=(env.get("STT_API_KEY", "").strip() or env.get("GROQ_API_KEY", "").strip()),
+        stt_base_url=env.get("STT_BASE_URL", "").strip(),
+        stt_model=env.get("STT_MODEL", "").strip(),
+        voice_max_seconds=num("VOICE_MAX_SECONDS", 60),
+        anthropic_api_key=env.get("ANTHROPIC_API_KEY", "").strip(),
+        vision_model=env.get("VISION_MODEL", "").strip(),
+        media_daily_limit=num("MEDIA_DAILY_LIMIT", 20),
         td_per_minute=num("TD_PER_MINUTE", 8),
         td_per_day=num("TD_PER_DAY", 800),
         td_monitor_reserve=num("TD_MONITOR_RESERVE", 250),

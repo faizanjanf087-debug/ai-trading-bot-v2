@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
@@ -13,13 +14,16 @@ from telegram.ext import ContextTypes
 
 from ai import prompts
 from ai.deepseek_client import AIError
+from ai.speech import SpeechError
+from ai.vision import ALLOWED_TYPES, MAX_IMAGE_BYTES
 from config.markets import MODES, SYMBOLS, resolve_symbol
 from data.base import BudgetExhausted, DataError
+from data.calendar import currencies_for
 from data.sessions import forex_open
 from services import approval as ap
 from services import report
 from services import formatter
-from services.intents import route
+from services.intents import route, route_sticker
 
 log = logging.getLogger(__name__)
 MAX_ALERTS_PER_USER = 10
@@ -136,6 +140,8 @@ HELP_USER = """Commands:
 /signals - aap ke open signals
 /history - aakhri band signals
 /stats - aap ke signals ka hisaab
+/news [pair] - bari khabrein + headlines
+/discipline - aap ka discipline (loss streak, zyada trading)
 /report - tafseeli report (kaunsa pattern/pair/AI raay kitni chali)
 /alert <pair> <price> - price alert
 /alerts - aap ke alerts   |   /delalert <id>
@@ -146,6 +152,7 @@ HELP_USER = """Commands:
 
 Pairs: XAUUSD, EURUSD, GBPUSD, USDJPY, GBPJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, SOLUSD
 Aap seedha sawal bhi likh sakte hain (jaise "gold ka kya scene hai?") - AI jawab dega.
+Voice note aur chart ki tasveer bhi bhej sakte hain (agar owner ne chalu ki ho). Awaaz/tasveer ek teesri party service par parhne ke liye jati hai; bot unhein save nahi karta, sirf text yaad rakhta hai.
 ⚠️ Yeh financial advice nahi hai."""
 
 HELP_OWNER = """
@@ -155,7 +162,8 @@ Owner commands:
 /approve <id>   /block <id>
 /watch add <pair>  |  /watch remove <pair>
 /status - bot ki halat, credits, open signals
-/backup - database ki copy"""
+/backup - database ki copy
+/event add YYYY-MM-DD HH:MM CUR title  |  /event list  |  /event clear  (bari khabar, UTC)"""
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -305,6 +313,25 @@ async def _run_analysis(update, context, sym, mode):
     return a, setup
 
 
+def _risk_notes(c, uid: int, sym=None) -> list:
+    """Signal se pehle ki tanbeehein: bari khabar ka waqt aur apna discipline. Blocking (HTTP/DB ho sakta hai)."""
+    notes = []
+    if c.calendar is not None and sym:
+        ev = c.calendar.blackout(sym, None, c.settings.news_blackout_before_min, c.settings.news_blackout_after_min)
+        if ev:
+            notes.append(f"📰 {ev['currency']} ki bari khabar ({ev['title']}) ke aas-paas ka waqt hai; spread aur slippage "
+                         "barh sakte hain. Khabar guzarne ka intezar behtar hai.")
+    if c.discipline is not None:
+        notes += c.discipline.warnings(uid)
+    return notes
+
+
+async def _send_risk_notes(update, context, sym=None):
+    notes = await asyncio.to_thread(_risk_notes, C(context), update.effective_user.id, sym)
+    if notes:
+        await update.message.reply_text("\n".join(notes))
+
+
 async def _do_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, sym: str, mode: str):
     """Ek pair ka tracked signal banana (command aur seedhe text dono yahi use karte hain)."""
     c = C(context)
@@ -319,6 +346,7 @@ async def _do_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, sym: st
     if not c.signal_service.can_create(sym, setup["side"], mode):
         await update.message.reply_text(f"{sym} par {setup['side']} ka signal pehle se open hai. /signals dekhein.")
         return
+    await _send_risk_notes(update, context, sym)
     sig = c.signal_service.create(setup, "user", [uid], owner_id=uid, analysis=a)
     await update.message.reply_text(formatter.format_signal(sig))
 
@@ -345,6 +373,7 @@ async def _do_best_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, mo
                 best, best_a = setup, a
     uid = update.effective_user.id
     if best:
+        await _send_risk_notes(update, context, best["symbol"])
         sig = c.signal_service.create(best, "user", [uid], owner_id=uid, analysis=best_a)
         await update.message.reply_text(formatter.format_signal(sig))
         return
@@ -515,11 +544,88 @@ async def _send_my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def _send_news(update: Update, context: ContextTypes.DEFAULT_TYPE, symbols=()):
+    """Bari khabrein (calendar) + headlines + mood. Koi AI nahi: sab data source se."""
+    c = C(context)
+    sym = symbols[0] if symbols else None
+    await _typing(update)
+
+    def load():
+        now = c.market.clock()
+        events = c.calendar.upcoming(currencies_for(sym) if sym else None, 48) if c.calendar is not None else []
+        kind = SYMBOLS[sym]["kind"] if sym else "forex"
+        heads = c.news.headlines(kind) if c.news else []
+        from data.news import headline_sentiment
+        fg = c.news.fear_greed() if (c.news and kind == "crypto") else None
+        return now, events, heads, (headline_sentiment(heads) if heads else None), fg
+
+    now, events, heads, sent, fg = await asyncio.to_thread(load)
+    title = f"{sym} news" if sym else "News"
+    text = formatter.format_news(events, heads, sent, fg, now, title)
+    if c.calendar is not None and c.calendar.last_error and not events:
+        text += "\n(Calendar ka source abhi nahi mila; owner /event add se bari khabar daal sakta hai.)"
+    await update.message.reply_text(text[:4000])
+
+
 @require_approved
-async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (update.message.text or "").strip()
-    if not text:
+async def news_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sym = resolve_symbol(context.args[0]) if context.args else None
+    if context.args and not sym:
+        await update.message.reply_text("Istemal: /news [pair], jaise /news XAUUSD")
         return
+    await _send_news(update, context, (sym,) if sym else ())
+
+
+async def _send_discipline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    c = C(context)
+    if c.discipline is None:
+        await update.message.reply_text("Discipline check abhi available nahi.")
+        return
+    text = await asyncio.to_thread(c.discipline.format_summary, update.effective_user.id)
+    await update.message.reply_text(text)
+
+
+@require_approved
+async def discipline_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _send_discipline(update, context)
+
+
+@require_owner
+async def event_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/event add 2026-10-29 18:00 USD FOMC rate decision  |  /event list  |  /event clear   (waqt UTC)"""
+    c = C(context)
+    args = context.args or []
+    if c.calendar is None:
+        await update.message.reply_text("Calendar band hai (ENABLE_CALENDAR).")
+        return
+    if args and args[0] == "list":
+        items = c.calendar.manual()
+        await update.message.reply_text(formatter.format_calendar_events(items, c.market.clock()) if items
+                                        else "Aap ki daali hui koi khabar nahi.")
+        return
+    if args and args[0] == "clear":
+        c.calendar.clear_manual()
+        await update.message.reply_text("Aap ki daali hui khabrein saaf ✅")
+        return
+    if len(args) >= 5 and args[0] == "add":
+        try:
+            ts = int(datetime.strptime(f"{args[1]} {args[2]}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            await update.message.reply_text("Tareekh/waqt ghalat. Misal: /event add 2026-10-29 18:00 USD FOMC rate decision")
+            return
+        cur = args[3].upper()
+        if len(cur) != 3 or not cur.isalpha():
+            await update.message.reply_text("Currency 3 harf ki ho, jaise USD ya EUR.")
+            return
+        c.calendar.add_manual(ts, cur, " ".join(args[4:]))
+        await update.message.reply_text(f"✅ Khabar daal di: {cur} {' '.join(args[4:])} ({args[1]} {args[2]} UTC). "
+                                        "Is ke aas-paas auto signal band rahenge.")
+        return
+    await update.message.reply_text("Istemal:\n/event add 2026-10-29 18:00 USD FOMC rate decision\n/event list\n/event clear\n(waqt UTC mein)")
+
+
+async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Text (likha hua, ya voice se bana) ka matlab samajh kar sahi jagah bhejna."""
     c = C(context)
     uid = update.effective_user.id
     intent = route(text, is_owner=c.approval.is_owner(uid))
@@ -531,6 +637,12 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if intent.kind == "help":
         await help_command(update, context)
+        return
+    if intent.kind == "discipline":   # "mera discipline kaisa hai" -> database se asli hisaab
+        await _send_discipline(update, context)
+        return
+    if intent.kind == "news":         # "news batao" / "btc news" -> calendar + headlines
+        await _send_news(update, context, intent.symbols)
         return
     if intent.kind == "status":       # "tp hit howa?" / "jo signal diya uska kya hua" -> database se asli jawab
         sigs = c.signal_repo.open_for_user(uid) + c.signal_repo.closed_for_user(uid, 3)
@@ -546,6 +658,145 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _typing(update)
     reply = await c.chat.reply(uid, text[:2000], hint=intent.hint)
     await update.message.reply_text(reply[:4000])
+
+
+@require_approved
+async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (update.message.text or "").strip()
+    if not text:
+        return
+    await _handle_text(update, context, text)
+
+
+# ---------- Sticker / voice / image (V2.4) ----------
+
+_NOTICED = set()
+
+
+async def _privacy_once(update: Update):
+    uid = update.effective_user.id
+    if uid not in _NOTICED:
+        _NOTICED.add(uid)
+        await update.message.reply_text("ℹ️ Awaaz/tasveer parhne ke liye ek teesri party service par jati hai. Bot unhein "
+                                        "save nahi karta; sirf nikla hua text yaad rakhta hai.")
+
+
+async def _media_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    c = C(context)
+    if c.media is None or not c.media.allow(update.effective_user.id):
+        await update.message.reply_text("Aaj ki voice/tasveer ki hadd poori ho gayi. Kal dobara try karein, ya text likh dein.")
+        return False
+    return True
+
+
+async def _download(tg_file) -> bytes:
+    f = await tg_file.get_file()
+    return bytes(await f.download_as_bytearray())
+
+
+@require_approved
+async def sticker_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sticker ke saath Telegram uska emoji bhejta hai; usi se mood pehchante hain (koi AI/download nahi)."""
+    st = update.message.sticker
+    emoji = (getattr(st, "emoji", None) or "") if st else ""
+    intent = route_sticker(emoji)
+    if intent is None:
+        return                                   # pehchan nahi: khamoshi, shor nahi
+    c = C(context)
+    await _typing(update)
+    reply = await c.chat.reply(update.effective_user.id, f"(user ne {emoji} sticker bheja)", hint=intent.hint)
+    await update.message.reply_text(reply[:4000])
+
+
+@require_approved
+async def voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    c = C(context)
+    msg = update.message
+    media = msg.voice or msg.audio
+    if media is None:
+        return
+    if c.speech is None or not c.speech.enabled:
+        await msg.reply_text("Voice abhi band hai (owner ne STT_API_KEY set nahi ki). Text mein likh dein.")
+        return
+    if (getattr(media, "duration", 0) or 0) > c.settings.voice_max_seconds:
+        await msg.reply_text(f"Voice {c.settings.voice_max_seconds} second se chhoti bhejein, ya text likh dein.")
+        return
+    if not await _media_allowed(update, context):
+        return
+    await _privacy_once(update)
+    await _typing(update)
+    try:
+        audio = await _download(media)
+        text = (await c.media.transcribe(audio)).strip()
+    except SpeechError as e:
+        log.warning("Voice transcription fail: %s", e)
+        await msg.reply_text("Awaaz samajh nahi aayi. Dobara bhejein ya text mein likh dein.")
+        return
+    if not text:
+        await msg.reply_text("Awaaz mein kuch sunai nahi diya. Dobara bhejein.")
+        return
+    await msg.reply_text(f"🎤 Maine suna: {text[:300]}")
+    await _handle_text(update, context, text)
+
+
+async def _image_flow(update: Update, context: ContextTypes.DEFAULT_TYPE, data: bytes, media_type: str):
+    c = C(context)
+    await _typing(update)
+    caption = (update.message.caption or "").strip()
+    reply = await c.media.image_reply(update.effective_user.id, data, media_type, caption)
+    await update.message.reply_text(reply[:4000])
+
+
+@require_approved
+async def photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    c = C(context)
+    msg = update.message
+    if c.vision is None or not c.vision.enabled:
+        await msg.reply_text("Chart ki tasveer abhi nahi parh sakta (owner ne ANTHROPIC_API_KEY set nahi ki). "
+                             "Text mein pair aur sawal likh dein.")
+        return
+    # Telegram kai size bhejta hai; sab se bari jo hadd ke andar ho
+    candidates = [p for p in reversed(msg.photo or []) if (p.file_size or 0) <= MAX_IMAGE_BYTES]
+    if not candidates:
+        await msg.reply_text("Tasveer bahut bari hai. Chhoti ya screenshot bhejein.")
+        return
+    if not await _media_allowed(update, context):
+        return
+    await _privacy_once(update)
+    try:
+        data = await _download(candidates[0])
+    except Exception:
+        log.warning("Photo download fail", exc_info=True)
+        await msg.reply_text("Tasveer download nahi ho saki, dobara bhejein.")
+        return
+    await _image_flow(update, context, data, "image/jpeg")
+
+
+@require_approved
+async def image_document_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tasveer 'file' ki tarah bheji (quality bachane ke liye)."""
+    c = C(context)
+    msg = update.message
+    doc = msg.document
+    if doc is None or doc.mime_type not in ALLOWED_TYPES:
+        await msg.reply_text("Sirf JPG, PNG ya WEBP tasveer chalti hai.")
+        return
+    if c.vision is None or not c.vision.enabled:
+        await msg.reply_text("Chart ki tasveer abhi nahi parh sakta (ANTHROPIC_API_KEY set nahi).")
+        return
+    if (doc.file_size or 0) > MAX_IMAGE_BYTES:
+        await msg.reply_text("Tasveer bahut bari hai (3.5 MB tak). Chhoti bhejein.")
+        return
+    if not await _media_allowed(update, context):
+        return
+    await _privacy_once(update)
+    try:
+        data = await _download(doc)
+    except Exception:
+        log.warning("Image document download fail", exc_info=True)
+        await msg.reply_text("Tasveer download nahi ho saki, dobara bhejein.")
+        return
+    await _image_flow(update, context, data, doc.mime_type)
 
 
 async def on_error(update, context: ContextTypes.DEFAULT_TYPE):
