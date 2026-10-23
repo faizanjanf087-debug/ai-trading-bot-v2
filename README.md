@@ -1,1 +1,127 @@
-# ai-trading-bot-v2
+# AI Trading Bot (Telegram)
+
+Forex (XAUUSD, EURUSD, GBPUSD, USDJPY...) aur Crypto (BTC, ETH, SOL) ke liye Telegram signals bot.
+Scalping aur intraday. DeepSeek AI, signal tracking, alerts aur memory ke saath.
+
+**Sirf signals** - bot khud trade nahi lagata. Yeh financial advice nahi hai, aur koi strategy munafa
+guarantee nahi karti. Pehle `backtest` aur chhote risk se parkhein.
+
+## Kya karta hai
+- **User approval:** naya user `/start` kare -> owner ko Approve/Reject buttons.
+- **Analysis:** RSI, MACD, EMA, ATR, volume, Support/Resistance, Fibonacci, RSI divergence,
+  candlestick patterns (Hammer, Engulfing, Morning/Evening Star, Doji...), chart patterns
+  (Double Top/Bottom, Range Breakout), higher-timeframe trend. Sab ka confluence **score**.
+- **Signals:** LIMIT ya MARKET entry, SL, TP1, TP2 (ATR par based). Scanner khud watchlist scan karta hai.
+- **Signal tracking:** `PENDING -> ACTIVE -> TP1 -> TP2 / SL / BE`, ya `EXPIRED / CANCELLED`.
+  Har badlaav par alert: **entry hit, TP1, TP2, SL**. Har signal ka status aur result (R mein) database mein.
+- **Price alerts:** `/alert XAUUSD 2650`.
+- **AI (DeepSeek):** free chat (memory ke saath), `/analyze` par raay, aur scanner ke signals ka review
+  (optional veto). AI ko sirf numbers/news text jata hai (chart image nahi).
+- **Memory:** chat history + summary, user ke open signals aur performance AI ko context mein milte hain.
+- **News/sentiment:** RSS headlines + Crypto Fear & Greed (fail-safe; na chalein to bot chalta rehta hai).
+- **Backtest:** `python -m backtest.runner XAUUSD scalp`
+
+## Setup (Replit)
+1. GitHub se **Import from GitHub**.
+2. **Tools -> Secrets** mein daalein (kabhi GitHub/chat mein nahi):
+
+   | Secret | Kahan se |
+   |---|---|
+   | `TELEGRAM_BOT_TOKEN` | @BotFather -> /newbot |
+   | `OWNER_ID` | @userinfobot |
+   | `TWELVEDATA_API_KEY` | twelvedata.com (forex/gold ke liye) |
+   | `DEEPSEEK_API_KEY` | platform.deepseek.com |
+
+   Baqi optional settings `.env.example` mein hain.
+3. Replit par Run button / `.replit` ka `uv run python main.py` istemal karein; dependencies project environment mein resolve hongi. System Python par global `pip install` ya `pip uninstall` na chalayein.
+4. 24/7 chalane ke liye Replit **Deployment** (Reserved VM / background worker) chahiye; sirf Run button
+   band hone par bot ruk jata hai. Hosting ke credits Agent credits se alag hain.
+
+## Twelve Data free plan (8/minute, 800/din)
+Bot credits ka hisaab rakhta hai (`data/budget.py`):
+- Candles cache hoti hain; entry timeframe ki sirf nayi candle band hone par dobara fetch.
+- Higher timeframe alag fetch nahi hota, entry candles se banta hai (credit bachta hai).
+- Forex scan sirf `SESSION_UTC` (default 07-20 UTC) mein, `FOREX_SCAN_MINUTES` (default 10) ke waqfe se.
+- `TD_MONITOR_RESERVE` (250) credits sirf open signals/alerts ki monitoring ke liye bachte hain.
+- Monitoring 1-minute candles (aakhri 15) check karti hai, is liye poll ke beech ki touch miss nahi hoti,
+  lekin forex mein **alert 5 se 14 minute tak late** aa sakta hai (credits ke hisaab se). Crypto ~30 second.
+  Scalping mein tez alert chahiye to Twelve Data ka paid plan lein.
+- Crypto (BTC/ETH/SOL) Kraken ke free public API se aata hai, is par credits nahi lagte.
+
+## Commands
+**Sab approved users:** `/signal <pair> [scalp|intraday]`, `/analyze <pair>`, `/signals`, `/history`, `/stats`, `/report`,
+`/alert <pair> <price>`, `/alerts`, `/delalert <id>`, `/watchlist`, `/mute`, `/unmute`, `/forget`, `/ping`.
+Seedha sawal likhne par AI jawab deta hai.
+**Owner:** `/users`, `/approve <id>`, `/block <id>`, `/watch add|remove <pair>`, `/status`, `/backup`.
+
+## Signal ke usool (lifecycle)
+- Ek candle mein SL aur TP dono touch hon to **SL pehle** maana jata hai (ehtiyat).
+- Entry wali candle mein sirf SL dekha jata hai.
+- TP1 hit par SL entry par (breakeven) aa jata hai. Result: 50% TP1 + 50% TP2 maan kar R mein.
+- Entry se pehle price TP1 tak chali jaye to signal CANCELLED; `pending_bars` ke baad EXPIRED.
+
+## Database
+Abhi SQLite (`data/bot.db`). **Replit Deployment mein local file redeploy par mit sakti hai**, is liye
+owner `/backup` se waqfe waqfe copy le. Aage chal kar Postgres par shift karna hai to sirf `db/` badlega.
+
+## Structure
+```
+main.py            wiring + Telegram app
+config/            settings (env), markets (symbols, modes)
+bot/               Telegram handlers, notifier
+services/          approval, signal lifecycle, signal service, chat, formatter, watchlist
+analysis/          indicators, levels (S/R, Fib), patterns, divergence, signal engine
+data/              Twelve Data, Kraken, credit budget, cache, news, sessions
+ai/                DeepSeek client, prompts, memory
+monitor/           price watcher (entry/TP/SL/alerts), scanner
+backtest/          backtest runner
+db/                SQLite schema aur repositories
+tests/             python -m unittest discover -s tests
+```
+
+## Maloom hadood
+- Rule-based score peshgoi nahi hai; backtest karke `MIN_SCORE` aur strategy tune karein.
+- Backtest mein spread/slippage shamil nahi.
+- Twelve Data par XAU/USD free plan mein chalta hai ya nahi, pehle apni key se `/analyze XAUUSD` se check karein.
+- Telegram handlers asli `python-telegram-bot` ke saath pehli baar Replit par chalenge; baqi logic tests se verify hai.
+
+
+## V2.0 (pehla hissa)
+
+- **Analysis journal:** har signal ke waqt ka snapshot (score, wajhein, higher TF, RSI/ATR, AI ki raay) `analysis_journal`
+  table mein save hota hai. Nateeja (win/loss/cancel) `signals` table se join hota hai.
+- **`/report`:** owner ko sab signals ka, baqi users ko apna hisaab: higher TF ke saath/khilaf, AI TAKE/SKIP, pair, mode,
+  entry type, har wajah (factor) ki win-rate, aur "missed" signals (price entry par aaye baghair TP1 tak chali gayi).
+  20 se kam trades par report khud tanbeeh deti hai ke natija pakka nahi.
+- **Counter-trend rule:** higher timeframe ke KHILAF signal ke liye `MIN_SCORE` se `COUNTER_TREND_EXTRA` (default 1.0)
+  zyada score chahiye. `0` karne par purana behavior wapas.
+- **Alert fix:** entry aur usi candle ka SL ab ek message mein aate hain; "Result" sirf aakhri event par dikhta hai.
+- Naya environment variable: `COUNTER_TREND_EXTRA` (optional).
+
+### Database (Supabase)
+
+- Supabase mein tables banane ke liye `supabase/schema.sql` SQL Editor mein chalayein (9 tables, Row Level Security on).
+- `DATABASE_URL` Replit Secrets mein daalein (format `.env.example` mein). Code ab ise parhta hai aur galat format par
+  saaf error deta hai; log mein password hamesha `***` dikhta hai.
+- `DATABASE_URL` set ho to bot Supabase (Postgres) use karta hai, khali ho to purani SQLite. Start par `schema.sql`
+  khud chal jati hai (dobara chalane se koi nuqsan nahi). Connection na bane to bot saaf error de kar rukta hai,
+  chup chaap SQLite par nahi girta.
+- Jaanch: Replit Shell mein `python -m db.check` (connect, 9 tables ki ginti, likhna/parhna).
+- `/backup` Supabase par poora data JSON file mein bhejta hai (SQLite par database file).
+
+### Sawal samajhna (intent router, `services/intents.py`)
+
+Har text message pehle pehchana jata hai ke user kya chahta hai:
+
+| Kisam | Misal | Bot kya karta hai |
+|---|---|---|
+| stats | "total status batao", "mera record", "win rate" | database se asli report (AI ka andaza nahi) |
+| status | "tp hit howa?", "jo signal diya uska kya hua" | database se signals ka haal |
+| signal | "gold ka signal do", "koi signal do intraday" | asli, tracked signal |
+| emotion | "bohat loss ho gaya", "pareshan hun", "loss recover karna hai" | AI se baat, narmi aur risk ki yaad-dehani ke hint ke saath, naya signal nahi |
+| help | "help", "kaise use karun" (chhote message) | commands ki list |
+| pending | owner: "koi naya user aya?" | pending users ki list |
+| chat | baqi sab | AI se baat (memory, signals aur live analysis ke saath) |
+
+Faisla lafzon (keywords) par hota hai, sirf Roman Urdu/English mein. Koi message galat jagah jaye to uski misal
+`tests/test_intents.py` mein daal kar rule theek kar sakte hain.
