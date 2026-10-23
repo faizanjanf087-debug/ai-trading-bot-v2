@@ -2,6 +2,9 @@ name: Organize project files
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/organize-project.yml"
 
 permissions:
   contents: write
@@ -37,12 +40,14 @@ jobs:
               ]
               z.extractall(temp, members)
 
+          # Accept either a ZIP with a top-level project folder or files at ZIP root.
           source = temp / "ai-trading-bot-v2"
           if not source.is_dir():
-              raise SystemExit("ZIP does not contain ai-trading-bot-v2/ at its root")
+              source = temp
+          if not any(source.iterdir()):
+              raise SystemExit("ZIP appears to be empty")
 
-          # Keep Git metadata and this workflow; replace misplaced root files
-          # with the clean project layout from the archive.
+          # Keep Git metadata and this workflow; replace root files with the archive contents.
           for item in list(repo.iterdir()):
               if item.name in {".git", ".github", "_project_extract"}:
                   continue
@@ -65,5 +70,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Organize project into correct folders" || echo "No changes to commit"
+          git commit -m "Restore project files from ZIP" || echo "No changes to commit"
           git push
