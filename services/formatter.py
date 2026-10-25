@@ -256,3 +256,14 @@ def format_news(events: list, headlines: list, sentiment, fear_greed, now: float
         parts.append(f"Crypto Fear & Greed: {fear_greed[0]} ({fear_greed[1]})")
     parts.append("\nBari khabar ke waqt spread aur slippage barh jate hain; us waqt naya trade na lena behtar hai.")
     return "\n".join(parts)
+
+
+def format_shock(symbol: str, shock: dict) -> str:
+    """Tez move ki chetavni: naya signal rok diya gaya hai. Financial advice nahi."""
+    arrow = "⬆️ upar" if shock.get("dir") == "up" else "⬇️ neeche"
+    return (
+        f"⚠️ {symbol}: tez move ({arrow}, lagbhag {shock.get('size_atr', '?')}× ATR).\n"
+        "Is waqt naya signal rok diya gaya hai taake chase na ho.\n"
+        "Stop-loss ka dhyan rakhein aur lot size chhota rakhein.\n"
+        "Yeh financial advice nahi hai."
+    )

@@ -58,6 +58,14 @@ class Scanner:
         minutes = self.s.forex_scan_minutes if SYMBOLS[symbol]["kind"] == "forex" else self.s.crypto_scan_minutes
         return now - self._last_scan.get((symbol, mode), 0) >= minutes * 60
 
+    def _shock_due(self, symbol: str, now: float) -> bool:
+        """Tez move ki chetavni har symbol ke liye 30 minute mein ek baar."""
+        last = self.__dict__.setdefault("_shock_last", {})
+        if now - last.get(symbol, 0) < 30 * 60:
+            return False
+        last[symbol] = now
+        return True
+
     def _review(self, analysis: dict, setup: dict) -> Optional[dict]:
         if not self.ai.enabled:
             return None
@@ -100,6 +108,13 @@ class Scanner:
                 except DataError as e:
                     log.warning("Scan data error %s: %s", symbol, e)
                     continue
+                if a and a.get("shock") and self._shock_due(symbol, now):
+                    text = formatter.format_shock(symbol, a["shock"])
+                    for uid in targets:
+                        try:
+                            await self.notify(uid, text)
+                        except Exception:
+                            log.warning("Chetavni nahi gayi user %s ko", uid, exc_info=True)
                 if not setup:
                     continue
                 if not self.signals.can_create(symbol, setup["side"], mode, self.s.signal_cooldown_minutes * 60):

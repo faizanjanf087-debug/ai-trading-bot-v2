@@ -75,4 +75,63 @@ def chart_patterns(df: pd.DataFrame, atr_value: float, n: int = 3) -> List[Tuple
                 out.append(("Range Breakout Up", "bullish"))
             elif last < bot - 0.1 * atr_value:
                 out.append(("Range Breakout Down", "bearish"))
+    out += head_shoulders(df, atr_value, n)
+    out += triangles(df, atr_value, n)
+    return out
+
+
+def _near(a: float, b: float, tol: float) -> bool:
+    return abs(a - b) <= tol
+
+
+def head_shoulders(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 40) -> List[Tuple[str, str]]:
+    """Head & Shoulders (bearish) aur Inverse H&S (bullish), neckline toot kar confirm hone par.
+    Teen swing highs (ya lows): beech wala sabse bada/chhota, do shoulders lagbhag barabar, aakhri pivot recent."""
+    out: List[Tuple[str, str]] = []
+    if len(df) < 60 or atr_value <= 0:
+        return out
+    sub = df.iloc[-100:].reset_index(drop=True)
+    highs, lows = pivots(sub, n)
+    tol = 0.6 * atr_value
+    last = float(sub["close"].iloc[-1])
+    cutoff = len(sub) - recent
+
+    if len(highs) >= 3:
+        (i1, a), (i2, b), (i3, c) = highs[-3:]
+        if i3 >= cutoff and b > a and b > c and _near(a, c, tol):
+            neck = (sub["low"].iloc[i1:i2 + 1].min() + sub["low"].iloc[i2:i3 + 1].min()) / 2
+            if last < neck - 0.1 * atr_value:
+                out.append(("Head & Shoulders", "bearish"))
+    if len(lows) >= 3:
+        (i1, a), (i2, b), (i3, c) = lows[-3:]
+        if i3 >= cutoff and b < a and b < c and _near(a, c, tol):
+            neck = (sub["high"].iloc[i1:i2 + 1].max() + sub["high"].iloc[i2:i3 + 1].max()) / 2
+            if last > neck + 0.1 * atr_value:
+                out.append(("Inverse Head & Shoulders", "bullish"))
+    return out
+
+
+def triangles(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 60) -> List[Tuple[str, str]]:
+    """Ascending (flat top, rising lows) aur Descending (flat bottom, falling highs) triangle.
+    Sirf breakout par signal: upar toota to bullish, neeche toota to bearish."""
+    out: List[Tuple[str, str]] = []
+    if len(df) < 40 or atr_value <= 0:
+        return out
+    sub = df.iloc[-120:].reset_index(drop=True)
+    highs, lows = pivots(sub, n)
+    highs = [p for p in highs if p[0] >= len(sub) - recent]
+    lows = [p for p in lows if p[0] >= len(sub) - recent]
+    if len(highs) < 2 or len(lows) < 2:
+        return out
+    tol = 0.4 * atr_value
+    last = float(sub["close"].iloc[-1])
+    (_, h1), (_, h2) = highs[-2], highs[-1]
+    (_, l1), (_, l2) = lows[-2], lows[-1]
+    top = max(h1, h2)
+    bot = min(l1, l2)
+
+    if _near(h1, h2, tol) and l2 > l1 + 0.2 * atr_value and last > top + 0.1 * atr_value:
+        out.append(("Ascending Triangle Breakout", "bullish"))
+    if _near(l1, l2, tol) and h2 < h1 - 0.2 * atr_value and last < bot - 0.1 * atr_value:
+        out.append(("Descending Triangle Breakdown", "bearish"))
     return out
