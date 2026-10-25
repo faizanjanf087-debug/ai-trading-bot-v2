@@ -64,3 +64,16 @@ class ShockMessageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TripleTopTests(unittest.TestCase):
+    def test_triple_top_breakdown(self):
+        df = _path([(0, 100), (15, 110), (25, 100), (35, 110), (45, 100), (55, 110), (70, 98), (79, 93)])
+        from analysis.patterns import triple_tops
+        names = [n for n, _ in triple_tops(df, atr_value=2.0)]
+        self.assertIn("Triple Top", names)
+
+    def test_triple_top_no_signal_without_break(self):
+        df = _path([(0, 100), (15, 110), (25, 100), (35, 110), (45, 100), (55, 110), (70, 104), (79, 105)])
+        from analysis.patterns import triple_tops
+        self.assertEqual(triple_tops(df, atr_value=2.0), [])

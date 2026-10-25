@@ -75,6 +75,7 @@ def chart_patterns(df: pd.DataFrame, atr_value: float, n: int = 3) -> List[Tuple
                 out.append(("Range Breakout Up", "bullish"))
             elif last < bot - 0.1 * atr_value:
                 out.append(("Range Breakout Down", "bearish"))
+    out += triple_tops(df, atr_value, n)
     out += head_shoulders(df, atr_value, n)
     out += triangles(df, atr_value, n)
     return out
@@ -134,4 +135,33 @@ def triangles(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 60) 
         out.append(("Ascending Triangle Breakout", "bullish"))
     if _near(l1, l2, tol) and h2 < h1 - 0.2 * atr_value and last < bot - 0.1 * atr_value:
         out.append(("Descending Triangle Breakdown", "bearish"))
+    return out
+
+
+def triple_tops(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 60) -> List[Tuple[str, str]]:
+    """Triple Top (bearish) aur Triple Bottom (bullish): teen barabar peaks/troughs, neckline ke neeche/upar confirm."""
+    out: List[Tuple[str, str]] = []
+    if len(df) < 60 or atr_value <= 0:
+        return out
+    sub = df.iloc[-120:].reset_index(drop=True)
+    highs, lows = pivots(sub, n)
+    tol = 0.5 * atr_value
+    last = float(sub["close"].iloc[-1])
+    cutoff = len(sub) - recent
+
+    if len(highs) >= 3:
+        pts = highs[-3:]
+        (i1, a), (i2, b), (i3, c) = pts
+        if i3 >= cutoff and i2 - i1 >= 4 and i3 - i2 >= 4 \
+                and _near(a, b, tol) and _near(b, c, tol):
+            neck = min(sub["low"].iloc[i1:i2 + 1].min(), sub["low"].iloc[i2:i3 + 1].min())
+            if last < neck - 0.1 * atr_value:
+                out.append(("Triple Top", "bearish"))
+    if len(lows) >= 3:
+        (i1, a), (i2, b), (i3, c) = lows[-3:]
+        if i3 >= cutoff and i2 - i1 >= 4 and i3 - i2 >= 4 \
+                and _near(a, b, tol) and _near(b, c, tol):
+            neck = max(sub["high"].iloc[i1:i2 + 1].max(), sub["high"].iloc[i2:i3 + 1].max())
+            if last > neck + 0.1 * atr_value:
+                out.append(("Triple Bottom", "bullish"))
     return out
