@@ -377,12 +377,16 @@ class HandlerTests(unittest.TestCase):
                         (self.h.photo_message, FakeMessage(photo=[FakeFile()]))):
             self.assertIn("approved nahi", self.run_h(fn, msg, uid=99)[0])
 
+    def test_sticker_ai_is_owner_only(self):
+        # user (uid=2) ke liye AI nahi: khamosh
+        self.assertEqual(self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji="😭")), uid=2), [])
+
     def test_sticker_sad_gets_ai_with_hint_unknown_is_silent(self):
-        r = self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji="😭")))
+        r = self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji="😭")), uid=1)
         self.assertEqual(r, ["AI jawab"])
         self.assertIn("Pehle narmi", " ".join(m["content"] for m in self.ai.calls[0] if m["role"] == "system"))
-        self.assertEqual(self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji="🐱"))), [])
-        self.assertEqual(self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji=None))), [])
+        self.assertEqual(self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji="🐱")), uid=1), [])
+        self.assertEqual(self.run_h(self.h.sticker_message, FakeMessage(sticker=types.SimpleNamespace(emoji=None)), uid=1), [])
 
     def test_voice_disabled_toolong_and_success(self):
         self.assertIn("band hai", self.run_h(self.h.voice_message, FakeMessage(voice=FakeFile()))[0])
@@ -449,3 +453,18 @@ class HandlerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UserNoChatTests(HandlerTests):
+    def test_user_free_text_gets_fixed_reply_not_ai(self):
+        before = len(self.ai.calls)
+        r = self.run_h(self.h.chat_message, FakeMessage(text="gold ka kya scene hai"), uid=2)
+        self.assertIn("sirf signals aur updates", r[-1])
+        self.assertEqual(len(self.ai.calls), before)
+
+    def test_owner_free_text_still_uses_ai(self):
+        r = self.run_h(self.h.chat_message, FakeMessage(text="gold ka kya scene hai"), uid=1)
+        self.assertEqual(r[-1], "AI jawab")
+
+    def test_user_forget_is_blocked(self):
+        self.assertIn("sirf signals aur updates", self.run_h(self.h.forget_cmd, FakeMessage(), uid=2)[-1])

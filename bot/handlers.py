@@ -136,7 +136,7 @@ async def _notify(context, user_id: int, text: str):
 
 HELP_USER = """Commands:
 /signal <pair> [scalp|intraday] - naya trade setup (limit/market, SL, TP)
-/analyze <pair> [scalp|intraday] - analysis + AI raay
+/analyze <pair> [scalp|intraday] - analysis (tafseel)
 /signals - aap ke open signals
 /history - aakhri band signals
 /stats - aap ke signals ka hisaab
@@ -147,11 +147,11 @@ HELP_USER = """Commands:
 /alerts - aap ke alerts   |   /delalert <id>
 /watchlist - scanner kin pairs ko dekh raha hai
 /mute  /unmute - auto signals band/chalu
-/forget - AI ki yaad saaf karein
 /ping - bot chal raha hai?
 
 Pairs: XAUUSD, EURUSD, GBPUSD, USDJPY, GBPJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, SOLUSD
-Aap seedha sawal bhi likh sakte hain (jaise "gold ka kya scene hai?") - AI jawab dega.
+Seedha likh kar bhi kaam hota hai: "xauusd ka signal do", "tp hit howa", "news batao", "mera record".
+Yeh bot AI chat nahi karta; sirf signals aur updates deta hai.
 Voice note aur chart ki tasveer bhi bhej sakte hain (agar owner ne chalu ki ho). Awaaz/tasveer ek teesri party service par parhne ke liye jati hai; bot unhein save nahi karta, sirf text yaad rakhta hai.
 ⚠️ Yeh financial advice nahi hai."""
 
@@ -407,7 +407,7 @@ async def analyze_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     a, setup = res
     await update.message.reply_text(formatter.format_analysis(a, setup))
-    if c.ai.enabled:
+    if c.ai.enabled and c.approval.is_owner(update.effective_user.id):
         try:
             news = await asyncio.to_thread(c.news.context, SYMBOLS[sym]["kind"])
             text = await asyncio.to_thread(c.ai.chat, prompts.analysis_prompt(a, setup, news))
@@ -528,6 +528,9 @@ async def unmute_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_approved
 async def forget_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not C(context).approval.is_owner(update.effective_user.id):
+        await update.message.reply_text(USER_FALLBACK)
+        return
     C(context).memory.repo.clear(update.effective_user.id)
     await update.message.reply_text("AI ki yaad saaf kar di ✅")
 
@@ -655,9 +658,16 @@ async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
         else:
             await _do_best_signal(update, context, intent.mode)
         return
+    if not c.approval.is_owner(uid):   # users ke liye AI chat nahi: sirf signals aur updates
+        await update.message.reply_text(USER_FALLBACK)
+        return
     await _typing(update)
     reply = await c.chat.reply(uid, text[:2000], hint=intent.hint)
     await update.message.reply_text(reply[:4000])
+
+
+USER_FALLBACK = ("Yeh bot sirf signals aur updates deta hai. Signal ke liye: \"xauusd ka signal do\" ya /signal. "
+                 "Trade ka haal: \"tp hit howa\" ya /signals. Commands ki list: /help")
 
 
 @require_approved
@@ -700,8 +710,8 @@ async def sticker_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     st = update.message.sticker
     emoji = (getattr(st, "emoji", None) or "") if st else ""
     intent = route_sticker(emoji)
-    if intent is None:
-        return                                   # pehchan nahi: khamoshi, shor nahi
+    if intent is None or not C(context).approval.is_owner(update.effective_user.id):
+        return                                   # pehchan nahi, ya user (AI chat sirf owner ke liye): khamoshi
     c = C(context)
     await _typing(update)
     reply = await c.chat.reply(update.effective_user.id, f"(user ne {emoji} sticker bheja)", hint=intent.hint)
