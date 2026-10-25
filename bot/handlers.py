@@ -22,6 +22,7 @@ from data.calendar import currencies_for
 from data.sessions import forex_open
 from services import approval as ap
 from services.diagnostics import describe
+from services.faq import answer as faq_answer
 from services import report
 from services import formatter
 from services.intents import route, route_sticker
@@ -673,6 +674,14 @@ async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             await _do_signal(update, context, intent.symbols[0], intent.mode)
         else:
             await _do_best_signal(update, context, intent.mode)
+        return
+    st = getattr(c, "settings", None)
+    wl = getattr(c, "watchlist", None)
+    faq = faq_answer(text, pairs=wl.get() if wl else (),
+                     session=getattr(st, "session_utc", "07-20"),
+                     forex_min=getattr(st, "forex_scan_minutes", 10), crypto_min=getattr(st, "crypto_scan_minutes", 5))
+    if faq:                            # pakke usool ke jawab (AI ka andaza nahi)
+        await update.message.reply_text(faq)
         return
     if not c.approval.is_owner(uid):   # users ke liye AI chat nahi: sirf signals aur updates
         await update.message.reply_text(USER_FALLBACK)
