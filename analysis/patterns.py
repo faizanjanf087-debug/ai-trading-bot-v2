@@ -48,7 +48,7 @@ def candlestick(df: pd.DataFrame) -> List[Tuple[str, str]]:
 
 
 def chart_patterns(df: pd.DataFrame, atr_value: float, n: int = 3) -> List[Tuple[str, str]]:
-    """Double Top/Bottom aur Range Breakout (simple, rule-based)."""
+    """Sab chart patterns ek jagah: Double/Triple Top-Bottom, H&S, triangles, wedges, butterfly, Range Breakout."""
     out: List[Tuple[str, str]] = []
     if len(df) < 40 or atr_value <= 0:
         return out
@@ -82,6 +82,25 @@ def chart_patterns(df: pd.DataFrame, atr_value: float, n: int = 3) -> List[Tuple
     out += head_shoulders(df, atr_value, n)
     out += triangles(df, atr_value, n)
     return out
+
+
+# Har pattern ka score weight. Mukammal reversal (H&S, triple, harmonic) sabse bharosemand mana gaya hai;
+# breakout (triangle, wedge, range) pehle confirm hota hai, is liye kam weight. Naam ki spelling yahan aur
+# detection functions mein ek jaisi honi chahiye, warna default weight lagega.
+PATTERN_WEIGHTS = {
+    "Double Top": 2.0, "Double Bottom": 2.0,
+    "Triple Top": 2.5, "Triple Bottom": 2.5,
+    "Head & Shoulders": 2.5, "Inverse Head & Shoulders": 2.5,
+    "Bullish Butterfly": 2.5, "Bearish Butterfly": 2.5,
+    "Ascending Triangle Breakout": 1.5, "Descending Triangle Breakdown": 1.5,
+    "Rising Wedge Breakdown": 1.5, "Falling Wedge Breakout": 1.5,
+    "Range Breakout Up": 1.5, "Range Breakout Down": 1.5,
+}
+DEFAULT_PATTERN_WEIGHT = 1.5
+
+
+def pattern_weight(name: str) -> float:
+    return PATTERN_WEIGHTS.get(name, DEFAULT_PATTERN_WEIGHT)
 
 
 def _near(a: float, b: float, tol: float) -> bool:

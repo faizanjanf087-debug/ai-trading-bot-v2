@@ -10,7 +10,7 @@ from analysis import indicators as ind
 from analysis.divergence import rsi_divergence
 from analysis.levels import (asia_range, fibonacci, market_structure, nearest_level,
                              pivot_levels, support_resistance)
-from analysis.patterns import candlestick, chart_patterns
+from analysis.patterns import candlestick, chart_patterns, pattern_weight
 from config.markets import MODES, SYMBOLS
 
 MIN_BARS = 80
@@ -190,7 +190,7 @@ def _score(a: dict) -> None:
         elif bias == "bearish":
             sell += 1; rs.append(name)
     for name, bias in a["chart_patterns"]:
-        w = 2 if "Breakout" not in name else 1.5
+        w = pattern_weight(name)
         if bias == "bullish":
             buy += w; rb.append(name)
         elif bias == "bearish":
