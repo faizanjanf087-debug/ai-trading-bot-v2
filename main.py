@@ -30,6 +30,7 @@ from services.analysis_service import AnalysisService
 from services.approval import ApprovalService
 from services.chat_service import ChatService
 from services.container import Container
+from services.diagnostics import describe
 from services.discipline import DisciplineService
 from services.media import MediaService
 from services.signal_service import SignalService
@@ -92,7 +93,7 @@ async def post_init(app: Application):
         log.warning("DEEPSEEK_API_KEY set nahi: AI chat/review band rahega.")
     log.info("Voice/Image=%s Calendar=%s", "ON" if c.settings.enable_media else "OFF (ENABLE_MEDIA=false)",
              "ON" if c.settings.enable_calendar else "OFF")
-    log.info("Bot shuru. Scanner=%s", c.settings.enable_scanner)
+    log.info("Bot shuru. Scanner=%s. Pairs=%s", c.settings.enable_scanner, ", ".join(c.watchlist.get()))
 
 
 async def post_shutdown(app: Application):
@@ -105,7 +106,11 @@ def main():
     # httpx har request ka URL log karta hai, jis mein bot token hota hai. Isay chup karwa do.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except RuntimeError as e:      # Secrets/env ki galti: saaf message, traceback nahi
+        log.error("CONFIG ERROR: %s", e)
+        raise SystemExit(1)
     container = build_container(settings)
 
     # Use certifi's maintained CA bundle for Telegram HTTPS requests.

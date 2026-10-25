@@ -21,6 +21,7 @@ from data.base import BudgetExhausted, DataError
 from data.calendar import currencies_for
 from data.sessions import forex_open
 from services import approval as ap
+from services.diagnostics import describe
 from services import report
 from services import formatter
 from services.intents import route, route_sticker
@@ -825,7 +826,7 @@ async def image_document_message(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def on_error(update, context: ContextTypes.DEFAULT_TYPE):
-    log.error("Handler error", exc_info=context.error)
+    log.error("Handler error: %s", describe(context.error), exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text("Kuch masla aa gaya, thori der baad dobara try karein.")
