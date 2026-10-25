@@ -20,6 +20,7 @@ Database: SQLite (local) ya Supabase/Postgres (`DATABASE_URL`). Replit par chalt
 - **Supabase tables par RLS on hai** (`supabase/schema.sql`). Public policy na banayein.
 - **Owner-only aur approved-only guards** (`require_owner`, `require_approved` in `bot/handlers.py`) har naye command par lagayein. Naya handler bina guard ke na ho.
 - Voice aur chart image ki roz ki hadd `MediaService` mein hai. Is ko bypass na karein.
+- Voice/image handlers `ENABLE_MEDIA` (default `false`) ke peeche hain. Abhi API keys nahi, is liye band hain.
 
 ## Folder structure
 ```
@@ -76,7 +77,7 @@ Replit par sirf **ek** instance. Do chal gaye to Telegram `Conflict` error deta 
 6. GitHub Actions workflows nahi hain. Naya workflow user ki manzoori ke baghair na banayein (purana `organize-project` workflow hata diya gaya tha, kyunke woh poora root mita sakta tha).
 
 ## Jo abhi khule hain
-- V2 ke Postgres, voice (STT), chart vision aur calendar ka asli API par test abhi tak nahi hua (README: "abhi tak parkha nahi gaya").
+- V2 ke Postgres, calendar ka asli API par test abhi tak nahi hua. Voice (STT) aur chart vision band hain (`ENABLE_MEDIA=false`), API keys aane par test hogi (README: "abhi tak parkha nahi gaya").
 - Intraday: 15m entry + 4-candle HTF join. 1H/4H fresh data nahi. Aage ka faisla user ke saath.
 - AI jawab mein Markdown (`**`) Telegram par raw dikh sakta hai.
 - Free Twelve Data plan par forex alerts 5–14 minute late ho sakte hain.

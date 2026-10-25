@@ -90,8 +90,8 @@ async def post_init(app: Application):
         log.warning("TWELVEDATA_API_KEY set nahi: forex/gold ka data nahi aayega (crypto chalega).")
     if not c.settings.deepseek_key:
         log.warning("DEEPSEEK_API_KEY set nahi: AI chat/review band rahega.")
-    log.info("Voice=%s Image=%s Calendar=%s", "ON" if c.speech.enabled else "OFF (STT_API_KEY nahi)",
-             "ON" if c.vision.enabled else "OFF (ANTHROPIC_API_KEY nahi)", "ON" if c.settings.enable_calendar else "OFF")
+    log.info("Voice/Image=%s Calendar=%s", "ON" if c.settings.enable_media else "OFF (ENABLE_MEDIA=false)",
+             "ON" if c.settings.enable_calendar else "OFF")
     log.info("Bot shuru. Scanner=%s", c.settings.enable_scanner)
 
 
@@ -135,9 +135,10 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.approval_buttons, pattern=r"^(approve|reject):\d+$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.chat_message))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handlers.sticker_message))
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handlers.voice_message))
-    app.add_handler(MessageHandler(filters.PHOTO, handlers.photo_message))
-    app.add_handler(MessageHandler(filters.Document.IMAGE, handlers.image_document_message))
+    if settings.enable_media:   # ENABLE_MEDIA=true set karne par hi voice/image chalega
+        app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handlers.voice_message))
+        app.add_handler(MessageHandler(filters.PHOTO, handlers.photo_message))
+        app.add_handler(MessageHandler(filters.Document.IMAGE, handlers.image_document_message))
     app.add_error_handler(handlers.on_error)
 
     app.run_polling()

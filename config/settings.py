@@ -37,6 +37,7 @@ class Settings:
     ai_veto: bool = False               # True: AI "skip" kahe to signal na bheja jaye
     # V2.2 news / calendar
     enable_calendar: bool = True
+    enable_media: bool = False          # voice aur chart image; abhi API keys nahi, is liye band
     calendar_url: str = ""              # khali = default free weekly feed (data/calendar.py)
     news_blackout_before_min: int = 30  # bari khabar se itni der pehle auto signal band
     news_blackout_after_min: int = 15
@@ -117,6 +118,7 @@ def load_settings(env=None) -> Settings:
         signal_cooldown_minutes=num("SIGNAL_COOLDOWN_MINUTES", 60),
         ai_veto=_bool(env.get("AI_VETO"), False),
         enable_calendar=_bool(env.get("ENABLE_CALENDAR"), True),
+        enable_media=_bool(env.get("ENABLE_MEDIA"), False),
         calendar_url=env.get("CALENDAR_URL", "").strip(),
         news_blackout_before_min=num("NEWS_BLACKOUT_BEFORE_MIN", 30),
         news_blackout_after_min=num("NEWS_BLACKOUT_AFTER_MIN", 15),
