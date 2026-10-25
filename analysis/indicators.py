@@ -83,3 +83,36 @@ def resample(df: pd.DataFrame, factor: int) -> pd.DataFrame:
     })
     out.index = g.apply(lambda x: x.index[0]).values
     return out
+
+
+def stochastic(df: pd.DataFrame, k: int = 14, d: int = 3, smooth: int = 3):
+    """Stochastic %K (smoothed) aur %D."""
+    low_min = df["low"].rolling(k).min()
+    high_max = df["high"].rolling(k).max()
+    raw = 100 * (df["close"] - low_min) / (high_max - low_min).replace(0, np.nan)
+    kline = raw.rolling(smooth).mean()
+    return kline, kline.rolling(d).mean()
+
+
+def vwap_session(df: pd.DataFrame) -> pd.Series:
+    """Har UTC din ke shuru se cumulative VWAP. Volume na ho to NaN (forex mein tick volume bharosemand nahi)."""
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    vol = df["volume"]
+    day = df.index.floor("D")
+    cum_pv = (typical * vol).groupby(day).cumsum()
+    cum_v = vol.groupby(day).cumsum()
+    return cum_pv / cum_v.replace(0, np.nan)
+
+
+def shock(df: pd.DataFrame, mult: float = 3.0, bars: int = 3, atr_n: int = 14) -> Optional[dict]:
+    """Tez move (crash/spike): aakhri `bars` candles mein close ka farq ATR ke `mult` guna se zyada.
+    Wapas: {'dir': 'up'|'down', 'size_atr': float} ya None."""
+    if len(df) < atr_n + bars + 1:
+        return None
+    atr_v = float(atr(df, atr_n).iloc[-1])
+    if not atr_v or atr_v != atr_v:
+        return None
+    move = float(df["close"].iloc[-1] - df["close"].iloc[-1 - bars])
+    if abs(move) < mult * atr_v:
+        return None
+    return {"dir": "up" if move > 0 else "down", "size_atr": round(abs(move) / atr_v, 1)}

@@ -8,14 +8,24 @@ import pandas as pd
 
 from analysis import indicators as ind
 from analysis.divergence import rsi_divergence
-from analysis.levels import fibonacci, market_structure, nearest_level, support_resistance
+from analysis.levels import (asia_range, fibonacci, market_structure, nearest_level,
+                             pivot_levels, support_resistance)
 from analysis.patterns import candlestick, chart_patterns
-from config.markets import MODES
+from config.markets import MODES, SYMBOLS
 
 MIN_BARS = 80
 RANGING_ADX = 15.0      # isse neeche market range mein: trend signal par zyada ehtiyat
 STRONG_ADX = 25.0       # isse upar mazboot trend
 RANGING_EXTRA = 0.5     # range market mein MIN_SCORE se itna zyada score chahiye
+
+
+def _f(x) -> Optional[float]:
+    """NaN ko None banata hai (JSON/score ke liye)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if v != v else v
 
 
 def tf_label(seconds: int) -> str:
@@ -80,6 +90,13 @@ def analyze(df: pd.DataFrame, symbol: str, mode: str) -> Optional[dict]:
     cp = chart_patterns(df, atr_v)
     div = rsi_divergence(df, rsi_s)
     vol = ind.volume_spike(df)
+    stoch_k_s, stoch_d_s = ind.stochastic(df)
+    pivots = pivot_levels(df)
+    asia = asia_range(df)
+    # VWAP sirf crypto par (Kraken ka volume asli hai; forex ka tick volume bharosemand nahi)
+    is_crypto = SYMBOLS.get(symbol, {}).get("kind") == "crypto"
+    vwap = _f(ind.vwap_session(df).iloc[-1]) if is_crypto else None
+    shock = ind.shock(df)
 
     a = {
         "symbol": symbol, "mode": mode, "tf": m["tf"], "price": price, "atr": atr_v,
@@ -98,6 +115,9 @@ def analyze(df: pd.DataFrame, symbol: str, mode: str) -> Optional[dict]:
                        else None),
         "levels": levels, "fib": fib, "candles": cs, "chart_patterns": cp,
         "divergence": div, "volume_spike": vol,
+        "stoch_k": _f(stoch_k_s.iloc[-1]), "stoch_d": _f(stoch_d_s.iloc[-1]),
+        "stoch_k_prev": _f(stoch_k_s.iloc[-2]), "stoch_d_prev": _f(stoch_d_s.iloc[-2]),
+        "pivots": pivots, "asia": asia, "vwap": vwap, "shock": shock,
         "last_candle_ts": int(df.index[-1].timestamp()),
     }
     _score(a)
@@ -201,6 +221,35 @@ def _score(a: dict) -> None:
         elif price >= a["bb_upper"] and r > 60:
             sell += 0.5; rs.append("Price at upper Bollinger band")
 
+    # 7a) Stochastic: oversold/overbought mein K-D cross
+    k, d, kp, dp = a.get("stoch_k"), a.get("stoch_d"), a.get("stoch_k_prev"), a.get("stoch_d_prev")
+    if None not in (k, d, kp, dp):
+        if k < 20 and kp <= dp and k > d:
+            buy += 1; rb.append(f"Stochastic oversold cross ({k:.0f})")
+        elif k > 80 and kp >= dp and k < d:
+            sell += 1; rs.append(f"Stochastic overbought cross ({k:.0f})")
+
+    # 7b) Pivot points (pichle din ke) aur Asia session ka breakout
+    piv = a.get("pivots")
+    if piv:
+        if abs(price - piv["S1"]) <= 0.5 * atr_v or abs(price - piv["S2"]) <= 0.5 * atr_v:
+            buy += 0.5; rb.append("Near daily pivot support (S1/S2)")
+        if abs(price - piv["R1"]) <= 0.5 * atr_v or abs(price - piv["R2"]) <= 0.5 * atr_v:
+            sell += 0.5; rs.append("Near daily pivot resistance (R1/R2)")
+    asia = a.get("asia")
+    if asia:
+        if price > asia["high"] and a["ltf_trend"] == "up":
+            buy += 0.5; rb.append("Asia session high breakout")
+        elif price < asia["low"] and a["ltf_trend"] == "down":
+            sell += 0.5; rs.append("Asia session low breakdown")
+
+    # 7c) VWAP (crypto): trend ke saath VWAP ke sahi taraf
+    if a.get("vwap") is not None:
+        if price > a["vwap"] and a["ltf_trend"] == "up":
+            buy += 0.5; rb.append("Above VWAP in uptrend")
+        elif price < a["vwap"] and a["ltf_trend"] == "down":
+            sell += 0.5; rs.append("Below VWAP in downtrend")
+
     # 7) Volume
     if a["volume_spike"]:
         last_up = a["macd_hist"] >= 0
@@ -218,6 +267,8 @@ def build_setup(a: dict, min_score: float = 6.0, counter_trend_extra: float = 0.
     counter_trend_extra: higher timeframe trend ke KHILAF signal ke liye score itna zyada chahiye."""
     if a is None:
         return None
+    if a.get("shock"):
+        return None   # tez move (crash/spike) chal raha hai: naya signal nahi (chase na karein)
     sb, ss = a["score_buy"], a["score_sell"]
     if max(sb, ss) < min_score or abs(sb - ss) < 2:
         return None

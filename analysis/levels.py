@@ -88,3 +88,28 @@ def market_structure(df: pd.DataFrame, n: int = 3, lookback: int = 150):
     if not hh and not hl:
         return "bearish"
     return None
+
+
+def pivot_levels(df: pd.DataFrame):
+    """Pichle UTC din ke High/Low/Close se classic pivot: P, R1, R2, S1, S2. Pichla din data mein na ho to None."""
+    dates = pd.Series(df.index.date, index=df.index)
+    today = dates.iloc[-1]
+    prev_days = sorted({d for d in dates.unique() if d < today})
+    if not prev_days:
+        return None
+    prev = df[dates == prev_days[-1]]
+    h, l, c = float(prev["high"].max()), float(prev["low"].min()), float(prev["close"].iloc[-1])
+    p = (h + l + c) / 3
+    return {"P": p, "R1": 2 * p - l, "R2": p + (h - l), "S1": 2 * p - h, "S2": p - (h - l)}
+
+
+def asia_range(df: pd.DataFrame, start_h: int = 0, end_h: int = 7):
+    """Aaj ke UTC 00:00-07:00 (Asian session) ka high/low. Session abhi khatam na hua ho to None."""
+    today = df.index[-1].date()
+    day = df[df.index.date == today]
+    if day.empty or day.index[-1].hour < end_h:
+        return None
+    sess = day[(day.index.hour >= start_h) & (day.index.hour < end_h)]
+    if sess.empty:
+        return None
+    return {"high": float(sess["high"].max()), "low": float(sess["low"].min())}
