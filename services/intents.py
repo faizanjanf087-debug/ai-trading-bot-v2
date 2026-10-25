@@ -42,6 +42,11 @@ HAPPY_HINT = (
 )
 
 HELP_WORDS = {"help", "madad", "guide", "commands", "command"}
+# Symbol ke saath "ye pair kaisa hai" wali baat -> analysis (naya signal nahi)
+ANALYZE_WORDS = {"analyze", "analyse", "analysis", "analisis", "kaisa", "kesa", "kaisi", "scan", "chart", "dekho",
+                 "check", "trend", "lag", "lagta", "lagti"}
+WATCHLIST_WORDS = {"watchlist", "watch", "pairs", "list"}
+ALERT_LIST_PHRASES = ("mere alerts", "alerts dikhao", "alerts batao", "my alerts", "alert list")
 PENDING_WORDS = ("aya", "aaya", "new", "naya", "pending", "request")
 
 EMOTION_HINT = (
@@ -53,7 +58,7 @@ EMOTION_HINT = (
 
 @dataclass(frozen=True)
 class Intent:
-    kind: str                     # pending | stats | status | signal | news | discipline | emotion | help | chat
+    kind: str                     # pending | stats | status | signal | analyze | watchlist | alerts | news | discipline | emotion | help | chat
     symbols: Tuple[str, ...] = ()
     mode: str = "scalp"
     hint: str = ""                # AI ko extra hidayat (sirf chat/emotion ke liye)
@@ -101,6 +106,12 @@ def route(text: str, is_owner: bool = False) -> Intent:
         return Intent("signal", symbols, mode)
     if words & {"tp", "tp1", "tp2", "sl", "hit"}:
         return Intent("status")
+    if symbols and words & ANALYZE_WORDS and len(words) <= 10:
+        return Intent("analyze", symbols, mode)
+    if words & WATCHLIST_WORDS and len(words) <= 4 and not symbols:
+        return Intent("watchlist")
+    if any(p in low for p in ALERT_LIST_PHRASES):
+        return Intent("alerts")
     if words & NEWS_WORDS and len(words) <= 6:       # chhota sawal: calendar + headlines; lamba sawal AI ko jata hai
         return Intent("news", symbols, mode)
     if any(e in raw for e in EMOTION_EMOJIS):        # sirf emoji: baqi koi matlab na nikle tab

@@ -402,6 +402,12 @@ async def analyze_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not sym or mode not in MODES:
         await update.message.reply_text("Istemal: /analyze XAUUSD [scalp|intraday]")
         return
+    await _send_analysis(update, context, sym, mode)
+
+
+async def _send_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, sym: str, mode: str):
+    """/analyze aur chat ka analysis: sab users ko analysis, AI ki tashreeh sirf owner ko."""
+    c = C(context)
     res = await _run_analysis(update, context, sym, mode)
     if res is None:
         return
@@ -643,6 +649,15 @@ async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
         return
     if intent.kind == "discipline":   # "mera discipline kaisa hai" -> database se asli hisaab
         await _send_discipline(update, context)
+        return
+    if intent.kind == "analyze":      # "btc analyze karo" / "xauusd intraday kaisa lagta" -> analysis
+        await _send_analysis(update, context, intent.symbols[0], intent.mode)
+        return
+    if intent.kind == "watchlist":
+        await watchlist_cmd(update, context)
+        return
+    if intent.kind == "alerts":
+        await alerts_cmd(update, context)
         return
     if intent.kind == "news":         # "news batao" / "btc news" -> calendar + headlines
         await _send_news(update, context, intent.symbols)
