@@ -48,6 +48,9 @@ ANALYZE_WORDS = {"analyze", "analyse", "analysis", "analisis", "kaisa", "kesa", 
 WATCHLIST_WORDS = {"watchlist", "watch", "pairs", "list"}
 ALERT_LIST_PHRASES = ("mere alerts", "alerts dikhao", "alerts batao", "my alerts", "alert list")
 PENDING_WORDS = ("aya", "aaya", "new", "naya", "pending", "request")
+# Trade ka haal poochne ke lafz: jawab hamesha database se (AI se nahi, taake andaza na lage)
+TRADE_STATUS_WORDS = {"pending", "panding", "pending", "pendng", "order", "orders", "open", "position",
+                      "positions", "trade", "trades", "active"}
 
 EMOTION_HINT = (
     "User abhi pareshan ya ghusse mein lag raha hai (shayad loss ki wajah se). Pehle narmi se tasalli do. Phir chhoti "
@@ -105,6 +108,8 @@ def route(text: str, is_owner: bool = False) -> Intent:
             return Intent("status")
         return Intent("signal", symbols, mode)
     if words & {"tp", "tp1", "tp2", "sl", "hit"}:
+        return Intent("status")
+    if words & TRADE_STATUS_WORDS and len(words) <= 6 and not symbols:
         return Intent("status")
     if symbols and words & ANALYZE_WORDS and len(words) <= 10:
         return Intent("analyze", symbols, mode)

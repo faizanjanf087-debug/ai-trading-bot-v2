@@ -32,3 +32,14 @@ class ChatTriggerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TradeStatusFromDatabaseTests(unittest.TestCase):
+    def test_pending_typo_goes_to_database_status(self):
+        self.assertEqual(route("Panding").kind, "status")
+
+    def test_pending_order_question(self):
+        self.assertEqual(route("pending order kahan hai").kind, "status")
+
+    def test_casual_word_stays_chat(self):
+        self.assertEqual(route("Lol").kind, "chat")
