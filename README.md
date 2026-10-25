@@ -33,7 +33,7 @@ guarantee nahi karti. Pehle `backtest` aur chhote risk se parkhein.
    | `DEEPSEEK_API_KEY` | platform.deepseek.com |
 
    Baqi optional settings `.env.example` mein hain.
-3. Replit par Run button / `.replit` ka `uv run python main.py` istemal karein; dependencies project environment mein resolve hongi. System Python par global `pip install` ya `pip uninstall` na chalayein.
+3. Dependencies ek hi jagah se: `requirements.txt`. Replit Shell mein `python -m pip install -r requirements.txt --break-system-packages`, phir Run button (`python main.py`). `pyproject.toml` / `uv` ab istemal nahi hote.
 4. 24/7 chalane ke liye Replit **Deployment** (Reserved VM / background worker) chahiye; sirf Run button
    band hone par bot ruk jata hai. Hosting ke credits Agent credits se alag hain.
 

@@ -1,1 +1,1 @@
-run = "uv run python main.py"
+run = "python main.py"
