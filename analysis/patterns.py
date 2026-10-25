@@ -1,6 +1,7 @@
 """Candlestick aur chart patterns. Har pattern (naam, bias) deta hai; bias: bullish/bearish/neutral."""
 from typing import List, Tuple
 
+import numpy as np
 import pandas as pd
 
 from analysis.levels import pivots
@@ -76,6 +77,8 @@ def chart_patterns(df: pd.DataFrame, atr_value: float, n: int = 3) -> List[Tuple
             elif last < bot - 0.1 * atr_value:
                 out.append(("Range Breakout Down", "bearish"))
     out += triple_tops(df, atr_value, n)
+    out += butterfly(df, atr_value, n)
+    out += wedges(df, atr_value, n)
     out += head_shoulders(df, atr_value, n)
     out += triangles(df, atr_value, n)
     return out
@@ -164,4 +167,85 @@ def triple_tops(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 60
             neck = max(sub["high"].iloc[i1:i2 + 1].max(), sub["high"].iloc[i2:i3 + 1].max())
             if last > neck + 0.1 * atr_value:
                 out.append(("Triple Bottom", "bullish"))
+    return out
+
+
+def _zigzag(highs, lows):
+    """High/low pivots ko index ke hisaab se milata hai, aur H/L ko baari baari (alternate) rakhta hai.
+    Do ek jaisi kism ke pivots aaye to zyada extreme wala rakhta hai. Wapas: [(index, price, 'H'|'L'), ...]"""
+    pts = sorted([(i, p, "H") for i, p in highs] + [(i, p, "L") for i, p in lows])
+    out = []
+    for pt in pts:
+        if out and out[-1][2] == pt[2]:
+            keep = max if pt[2] == "H" else min
+            if keep(pt[1], out[-1][1]) == pt[1]:
+                out[-1] = pt
+        else:
+            out.append(pt)
+    return out
+
+
+def butterfly(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 15) -> List[Tuple[str, str]]:
+    """Butterfly harmonic (Fibonacci ratios): X-A-B-C-D. D (aakhri pivot) 1.27 XA extension par ho aur
+    price wahan se palat rahi ho to reversal ka ishara. Bullish: D neeche (X ke neeche). Bearish: D upar."""
+    out: List[Tuple[str, str]] = []
+    if len(df) < 60 or atr_value <= 0:
+        return out
+    sub = df.iloc[-150:].reset_index(drop=True)
+    highs, lows = pivots(sub, n)
+    zz = _zigzag(highs, lows)
+    if len(zz) < 5:
+        return out
+    (_, x, tx), (_, a, ta), (_, b, tb), (ic, c, tc), (idd, d, td) = zz[-5:]
+    if idd < len(sub) - recent:
+        return out
+    last = float(sub["close"].iloc[-1])
+    xa = abs(a - x)
+    if xa <= 0.5 * atr_value:
+        return out
+    ab = abs(b - a) / xa
+    bc = abs(c - b) / abs(b - a) if b != a else 0
+    cd = abs(d - c) / abs(c - b) if c != b else 0
+    ok = 0.7 <= ab <= 0.85 and 0.35 <= bc <= 0.9 and 1.5 <= cd <= 2.3
+    if not ok:
+        return out
+    if tx == "L" and td == "L" and ta == "H":        # bullish: D X ke neeche
+        target = a - 1.27 * (a - x)
+        if abs(d - target) <= 0.15 * xa and last > d + 0.2 * atr_value:
+            out.append(("Bullish Butterfly", "bullish"))
+    elif tx == "H" and td == "H" and ta == "L":      # bearish: D X ke upar
+        target = a + 1.27 * (x - a)
+        if abs(d - target) <= 0.15 * xa and last < d - 0.2 * atr_value:
+            out.append(("Bearish Butterfly", "bearish"))
+    return out
+
+
+def wedges(df: pd.DataFrame, atr_value: float, n: int = 3, recent: int = 60) -> List[Tuple[str, str]]:
+    """Rising Wedge (bearish breakdown) aur Falling Wedge (bullish breakout).
+    Upper aur lower trendlines aakhri 3-3 pivots par fit hoti hain; dono ek hi taraf jhuk kar converge karti hon."""
+    out: List[Tuple[str, str]] = []
+    if len(df) < 60 or atr_value <= 0:
+        return out
+    sub = df.iloc[-120:].reset_index(drop=True)
+    highs, lows = pivots(sub, n)
+    highs = [p for p in highs if p[0] >= len(sub) - recent][-3:]
+    lows = [p for p in lows if p[0] >= len(sub) - recent][-3:]
+    if len(highs) < 3 or len(lows) < 3:
+        return out
+    hx, hy = [p[0] for p in highs], [p[1] for p in highs]
+    lx, ly = [p[0] for p in lows], [p[1] for p in lows]
+    hs = np.polyfit(hx, hy, 1)
+    ls = np.polyfit(lx, ly, 1)
+    last_i = len(sub) - 1
+    up_now = hs[0] * last_i + hs[1]
+    lo_now = ls[0] * last_i + ls[1]
+    if up_now - lo_now <= 0.5 * atr_value:          # band bahut tang ho gayi: wedge nahi
+        return out
+    last = float(sub["close"].iloc[-1])
+    if hs[0] > 0 and ls[0] > 0 and ls[0] > hs[0]:    # dono upar, neeche wali tez: rising wedge
+        if last < lo_now - 0.1 * atr_value:
+            out.append(("Rising Wedge Breakdown", "bearish"))
+    if hs[0] < 0 and ls[0] < 0 and hs[0] < ls[0]:    # dono neeche, upar wali tez: falling wedge
+        if last > up_now + 0.1 * atr_value:
+            out.append(("Falling Wedge Breakout", "bullish"))
     return out
